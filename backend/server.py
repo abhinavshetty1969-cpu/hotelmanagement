@@ -29,6 +29,10 @@ JWT_SECRET = os.environ.get('JWT_SECRET', 'hotel-management-secret-key-2024')
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_HOURS = 24
 
+# Admin credentials
+ADMIN_EMAIL = "admin1@gmail.com"
+ADMIN_PASSWORD = "admin123"
+
 # Create the main app
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
@@ -45,10 +49,21 @@ class UserCreate(BaseModel):
     password: str
     role: str = "staff"  # admin or staff
     full_name: str
+    email: Optional[str] = ""
 
 class UserLogin(BaseModel):
     username: str
     password: str
+
+class AdminLogin(BaseModel):
+    email: str
+    password: str
+
+class StaffCreate(BaseModel):
+    username: str
+    password: str
+    full_name: str
+    email: Optional[str] = ""
 
 class User(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -56,6 +71,78 @@ class User(BaseModel):
     username: str
     role: str
     full_name: str
+    email: str = ""
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+# Customer Models
+class CustomerUserCreate(BaseModel):
+    name: str
+    email: str
+    phone: str
+    password: str
+
+class CustomerUserLogin(BaseModel):
+    email: str
+    password: str
+
+class CustomerUser(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str
+    email: str
+    phone: str
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+class SlotBookingCreate(BaseModel):
+    event_date: str
+    event_type: str
+    number_of_guests: int
+    event_timing: str
+    venue_preference: str
+    special_requests: Optional[str] = ""
+
+class SlotBooking(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    customer_id: str
+    customer_name: str
+    customer_email: str
+    customer_phone: str
+    event_date: str
+    event_type: str
+    number_of_guests: int
+    event_timing: str
+    venue_preference: str
+    special_requests: str = ""
+    status: str = "Pending"  # Pending, Confirmed, Rejected
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+class ReviewCreate(BaseModel):
+    event_id: str
+    rating: int
+    review_text: str
+
+class Review(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    event_id: str
+    customer_id: str
+    customer_name: str
+    rating: int
+    review_text: str
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+class EventPhotoCreate(BaseModel):
+    event_id: str
+    photo_url: str
+    caption: Optional[str] = ""
+
+class EventPhoto(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    event_id: str
+    photo_url: str
+    caption: str = ""
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 class CustomerCreate(BaseModel):
@@ -63,6 +150,7 @@ class CustomerCreate(BaseModel):
     phone_number: str
     address: str
     reference: Optional[str] = ""
+    email: Optional[str] = ""
 
 class Customer(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -71,25 +159,28 @@ class Customer(BaseModel):
     phone_number: str
     address: str
     reference: str = ""
+    email: str = ""
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 class EventCreate(BaseModel):
     customer_id: str
     event_date: str
-    event_type: str  # Wedding, Birthday, Corporate, etc.
+    event_type: str
     number_of_guests: int
     event_timing: str
     venue_name: str
     per_plate_cost: float
     discount: float = 0
-    quotation_status: str = "Pending"  # Sent, Approved, Pending
+    quotation_status: str = "Pending"
     notes: Optional[str] = ""
+    is_completed: bool = False
 
 class Event(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     customer_id: str
     customer_name: Optional[str] = ""
+    customer_email: Optional[str] = ""
     event_date: str
     event_type: str
     number_of_guests: int
@@ -101,12 +192,13 @@ class Event(BaseModel):
     final_amount: float = 0
     quotation_status: str = "Pending"
     notes: str = ""
+    is_completed: bool = False
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 class PaymentCreate(BaseModel):
     event_id: str
     amount: float
-    payment_mode: str  # Cash, UPI, Bank
+    payment_mode: str
     notes: Optional[str] = ""
 
 class Payment(BaseModel):
@@ -121,7 +213,7 @@ class Payment(BaseModel):
 
 class ExpenseCreate(BaseModel):
     expense_date: str
-    expense_type: str  # Vegetables, Gas, Labour, Transport
+    expense_type: str
     amount: float
     notes: Optional[str] = ""
 
@@ -138,9 +230,9 @@ class LeadCreate(BaseModel):
     client_name: str
     phone_number: str
     inquiry_date: str
-    lead_source: str  # Instagram, Reference, etc.
+    lead_source: str
     follow_up_date: str
-    status: str = "Warm"  # Hot, Warm, Cold
+    status: str = "Warm"
     notes: Optional[str] = ""
 
 class Lead(BaseModel):
@@ -155,16 +247,6 @@ class Lead(BaseModel):
     notes: str = ""
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
-class PaymentTracking(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    event_id: str
-    customer_name: str
-    total_amount: float
-    advance_received: float
-    pending_amount: float
-    due_date: Optional[str] = ""
-    payment_status: str  # Paid, Partial, Pending
-
 # ============== AUTHENTICATION ==============
 
 def hash_password(password: str) -> str:
@@ -173,11 +255,12 @@ def hash_password(password: str) -> str:
 def verify_password(password: str, hashed: str) -> bool:
     return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
 
-def create_token(user_id: str, username: str, role: str) -> str:
+def create_token(user_id: str, username: str, role: str, user_type: str = "staff") -> str:
     payload = {
         "user_id": user_id,
         "username": username,
         "role": role,
+        "user_type": user_type,
         "exp": datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRATION_HOURS)
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
@@ -191,7 +274,55 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
-# ============== AUTH ROUTES ==============
+# ============== ADMIN AUTH ROUTES ==============
+
+@api_router.post("/auth/admin-login")
+async def admin_login(credentials: AdminLogin):
+    # Check for hardcoded admin credentials
+    if credentials.email == ADMIN_EMAIL and credentials.password == ADMIN_PASSWORD:
+        # Check if admin exists in DB, if not create one
+        admin = await db.users.find_one({"email": ADMIN_EMAIL, "role": "admin"})
+        if not admin:
+            admin_obj = User(
+                username="admin",
+                role="admin",
+                full_name="Super Admin",
+                email=ADMIN_EMAIL
+            )
+            doc = admin_obj.model_dump()
+            doc['password_hash'] = hash_password(ADMIN_PASSWORD)
+            await db.users.insert_one(doc)
+            admin = doc
+        
+        token = create_token(admin.get('id', 'admin'), "admin", "admin", "admin")
+        return {
+            "token": token,
+            "user": {
+                "id": admin.get('id', 'admin'),
+                "username": "admin",
+                "role": "admin",
+                "full_name": admin.get('full_name', 'Super Admin'),
+                "email": ADMIN_EMAIL
+            }
+        }
+    raise HTTPException(status_code=401, detail="Invalid admin credentials")
+
+@api_router.post("/auth/staff-login")
+async def staff_login(credentials: UserLogin):
+    user = await db.users.find_one({"username": credentials.username, "role": "staff"})
+    if not user or not verify_password(credentials.password, user['password_hash']):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    
+    token = create_token(user['id'], user['username'], user['role'], "staff")
+    return {
+        "token": token,
+        "user": {
+            "id": user['id'],
+            "username": user['username'],
+            "role": user['role'],
+            "full_name": user['full_name']
+        }
+    }
 
 @api_router.post("/auth/register", response_model=User)
 async def register(user: UserCreate):
@@ -202,7 +333,8 @@ async def register(user: UserCreate):
     user_obj = User(
         username=user.username,
         role=user.role,
-        full_name=user.full_name
+        full_name=user.full_name,
+        email=user.email or ""
     )
     doc = user_obj.model_dump()
     doc['password_hash'] = hash_password(user.password)
@@ -215,7 +347,7 @@ async def login(credentials: UserLogin):
     if not user or not verify_password(credentials.password, user['password_hash']):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     
-    token = create_token(user['id'], user['username'], user['role'])
+    token = create_token(user['id'], user['username'], user['role'], user['role'])
     return {
         "token": token,
         "user": {
@@ -228,10 +360,64 @@ async def login(credentials: UserLogin):
 
 @api_router.get("/auth/me")
 async def get_me(current_user: dict = Depends(get_current_user)):
-    user = await db.users.find_one({"id": current_user['user_id']}, {"_id": 0, "password_hash": 0})
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    return user
+    user_type = current_user.get('user_type', 'staff')
+    
+    if user_type == 'customer':
+        user = await db.customer_users.find_one({"id": current_user['user_id']}, {"_id": 0, "password_hash": 0})
+        if user:
+            user['user_type'] = 'customer'
+            return user
+    else:
+        user = await db.users.find_one({"id": current_user['user_id']}, {"_id": 0, "password_hash": 0})
+        if user:
+            user['user_type'] = user.get('role', 'staff')
+            return user
+    
+    # Return basic info from token if user not found in DB
+    return {
+        "id": current_user['user_id'],
+        "username": current_user['username'],
+        "role": current_user['role'],
+        "user_type": user_type
+    }
+
+# ============== STAFF MANAGEMENT (Admin Only) ==============
+
+@api_router.post("/staff", response_model=User)
+async def create_staff(staff: StaffCreate, current_user: dict = Depends(get_current_user)):
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    existing = await db.users.find_one({"username": staff.username})
+    if existing:
+        raise HTTPException(status_code=400, detail="Username already exists")
+    
+    user_obj = User(
+        username=staff.username,
+        role="staff",
+        full_name=staff.full_name,
+        email=staff.email or ""
+    )
+    doc = user_obj.model_dump()
+    doc['password_hash'] = hash_password(staff.password)
+    await db.users.insert_one(doc)
+    return user_obj
+
+@api_router.get("/staff", response_model=List[User])
+async def get_staff(current_user: dict = Depends(get_current_user)):
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Admin access required")
+    staff = await db.users.find({"role": "staff"}, {"_id": 0, "password_hash": 0}).to_list(1000)
+    return staff
+
+@api_router.delete("/staff/{staff_id}")
+async def delete_staff(staff_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Admin access required")
+    result = await db.users.delete_one({"id": staff_id, "role": "staff"})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Staff not found")
+    return {"message": "Staff deleted"}
 
 @api_router.get("/users", response_model=List[User])
 async def get_users(current_user: dict = Depends(get_current_user)):
@@ -239,6 +425,220 @@ async def get_users(current_user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=403, detail="Admin access required")
     users = await db.users.find({}, {"_id": 0, "password_hash": 0}).to_list(1000)
     return users
+
+# ============== CUSTOMER USER AUTH ==============
+
+@api_router.post("/customer/register")
+async def customer_register(customer: CustomerUserCreate):
+    existing = await db.customer_users.find_one({"email": customer.email})
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    
+    customer_obj = CustomerUser(
+        name=customer.name,
+        email=customer.email,
+        phone=customer.phone
+    )
+    doc = customer_obj.model_dump()
+    doc['password_hash'] = hash_password(customer.password)
+    await db.customer_users.insert_one(doc)
+    
+    token = create_token(customer_obj.id, customer.email, "customer", "customer")
+    return {
+        "token": token,
+        "user": {
+            "id": customer_obj.id,
+            "name": customer_obj.name,
+            "email": customer_obj.email,
+            "phone": customer_obj.phone,
+            "user_type": "customer"
+        }
+    }
+
+@api_router.post("/customer/login")
+async def customer_login(credentials: CustomerUserLogin):
+    customer = await db.customer_users.find_one({"email": credentials.email})
+    if not customer or not verify_password(credentials.password, customer['password_hash']):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    
+    token = create_token(customer['id'], customer['email'], "customer", "customer")
+    return {
+        "token": token,
+        "user": {
+            "id": customer['id'],
+            "name": customer['name'],
+            "email": customer['email'],
+            "phone": customer['phone'],
+            "user_type": "customer"
+        }
+    }
+
+# ============== CUSTOMER PORTAL ==============
+
+@api_router.get("/customer/past-events")
+async def get_customer_past_events(current_user: dict = Depends(get_current_user)):
+    if current_user.get('user_type') != 'customer':
+        raise HTTPException(status_code=403, detail="Customer access required")
+    
+    customer = await db.customer_users.find_one({"id": current_user['user_id']}, {"_id": 0})
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    
+    # Find events by customer email
+    events = await db.events.find({
+        "customer_email": customer['email'],
+        "is_completed": True
+    }, {"_id": 0}).to_list(100)
+    
+    # Get photos and reviews for each event
+    for event in events:
+        photos = await db.event_photos.find({"event_id": event['id']}, {"_id": 0}).to_list(50)
+        reviews = await db.reviews.find({"event_id": event['id']}, {"_id": 0}).to_list(50)
+        event['photos'] = photos
+        event['reviews'] = reviews
+    
+    return events
+
+@api_router.get("/customer/my-bookings")
+async def get_customer_bookings(current_user: dict = Depends(get_current_user)):
+    if current_user.get('user_type') != 'customer':
+        raise HTTPException(status_code=403, detail="Customer access required")
+    
+    bookings = await db.slot_bookings.find(
+        {"customer_id": current_user['user_id']},
+        {"_id": 0}
+    ).to_list(100)
+    return bookings
+
+@api_router.post("/customer/book-slot")
+async def book_slot(booking: SlotBookingCreate, current_user: dict = Depends(get_current_user)):
+    if current_user.get('user_type') != 'customer':
+        raise HTTPException(status_code=403, detail="Customer access required")
+    
+    customer = await db.customer_users.find_one({"id": current_user['user_id']}, {"_id": 0})
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    
+    booking_obj = SlotBooking(
+        customer_id=current_user['user_id'],
+        customer_name=customer['name'],
+        customer_email=customer['email'],
+        customer_phone=customer['phone'],
+        event_date=booking.event_date,
+        event_type=booking.event_type,
+        number_of_guests=booking.number_of_guests,
+        event_timing=booking.event_timing,
+        venue_preference=booking.venue_preference,
+        special_requests=booking.special_requests or ""
+    )
+    
+    doc = booking_obj.model_dump()
+    await db.slot_bookings.insert_one(doc)
+    return booking_obj
+
+@api_router.post("/customer/review")
+async def add_review(review: ReviewCreate, current_user: dict = Depends(get_current_user)):
+    if current_user.get('user_type') != 'customer':
+        raise HTTPException(status_code=403, detail="Customer access required")
+    
+    customer = await db.customer_users.find_one({"id": current_user['user_id']}, {"_id": 0})
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    
+    event = await db.events.find_one({"id": review.event_id}, {"_id": 0})
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+    
+    review_obj = Review(
+        event_id=review.event_id,
+        customer_id=current_user['user_id'],
+        customer_name=customer['name'],
+        rating=review.rating,
+        review_text=review.review_text
+    )
+    
+    doc = review_obj.model_dump()
+    await db.reviews.insert_one(doc)
+    return review_obj
+
+# ============== SLOT BOOKINGS (Admin/Staff) ==============
+
+@api_router.get("/slot-bookings")
+async def get_slot_bookings(current_user: dict = Depends(get_current_user)):
+    if current_user.get('user_type') == 'customer':
+        raise HTTPException(status_code=403, detail="Staff access required")
+    
+    bookings = await db.slot_bookings.find({}, {"_id": 0}).to_list(1000)
+    return bookings
+
+@api_router.put("/slot-bookings/{booking_id}/status")
+async def update_booking_status(booking_id: str, status: str, current_user: dict = Depends(get_current_user)):
+    if current_user.get('user_type') == 'customer':
+        raise HTTPException(status_code=403, detail="Staff access required")
+    
+    result = await db.slot_bookings.update_one(
+        {"id": booking_id},
+        {"$set": {"status": status}}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    return {"message": f"Booking status updated to {status}"}
+
+# ============== EVENT PHOTOS (Admin/Staff) ==============
+
+@api_router.post("/event-photos")
+async def add_event_photo(photo: EventPhotoCreate, current_user: dict = Depends(get_current_user)):
+    if current_user.get('user_type') == 'customer':
+        raise HTTPException(status_code=403, detail="Staff access required")
+    
+    photo_obj = EventPhoto(
+        event_id=photo.event_id,
+        photo_url=photo.photo_url,
+        caption=photo.caption or ""
+    )
+    doc = photo_obj.model_dump()
+    await db.event_photos.insert_one(doc)
+    return photo_obj
+
+@api_router.get("/event-photos/{event_id}")
+async def get_event_photos(event_id: str, current_user: dict = Depends(get_current_user)):
+    photos = await db.event_photos.find({"event_id": event_id}, {"_id": 0}).to_list(100)
+    return photos
+
+@api_router.delete("/event-photos/{photo_id}")
+async def delete_event_photo(photo_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user.get('user_type') == 'customer':
+        raise HTTPException(status_code=403, detail="Staff access required")
+    result = await db.event_photos.delete_one({"id": photo_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Photo not found")
+    return {"message": "Photo deleted"}
+
+# ============== PUBLIC GALLERY ==============
+
+@api_router.get("/public/gallery")
+async def get_public_gallery():
+    # Get all completed events with photos
+    events = await db.events.find({"is_completed": True}, {"_id": 0}).to_list(100)
+    gallery = []
+    for event in events:
+        photos = await db.event_photos.find({"event_id": event['id']}, {"_id": 0}).to_list(20)
+        reviews = await db.reviews.find({"event_id": event['id']}, {"_id": 0}).to_list(20)
+        if photos:
+            gallery.append({
+                "event_id": event['id'],
+                "event_type": event['event_type'],
+                "event_date": event['event_date'],
+                "venue_name": event['venue_name'],
+                "photos": photos,
+                "reviews": reviews
+            })
+    return gallery
+
+@api_router.get("/public/reviews")
+async def get_public_reviews():
+    reviews = await db.reviews.find({}, {"_id": 0}).to_list(100)
+    return reviews
 
 # ============== CUSTOMER ROUTES ==============
 
@@ -293,6 +693,7 @@ async def create_event(event: EventCreate, current_user: dict = Depends(get_curr
     event_obj = Event(
         **event.model_dump(),
         customer_name=customer['client_name'],
+        customer_email=customer.get('email', ''),
         total_amount=total_amount,
         final_amount=final_amount
     )
@@ -323,6 +724,7 @@ async def update_event(event_id: str, event: EventCreate, current_user: dict = D
     
     update_data = event.model_dump()
     update_data['customer_name'] = customer['client_name']
+    update_data['customer_email'] = customer.get('email', '')
     update_data['total_amount'] = total_amount
     update_data['final_amount'] = final_amount
     
@@ -331,6 +733,13 @@ async def update_event(event_id: str, event: EventCreate, current_user: dict = D
         raise HTTPException(status_code=404, detail="Event not found")
     updated = await db.events.find_one({"id": event_id}, {"_id": 0})
     return updated
+
+@api_router.put("/events/{event_id}/complete")
+async def mark_event_complete(event_id: str, current_user: dict = Depends(get_current_user)):
+    result = await db.events.update_one({"id": event_id}, {"$set": {"is_completed": True}})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Event not found")
+    return {"message": "Event marked as completed"}
 
 @api_router.delete("/events/{event_id}")
 async def delete_event(event_id: str, current_user: dict = Depends(get_current_user)):
@@ -434,19 +843,14 @@ async def delete_lead(lead_id: str, current_user: dict = Depends(get_current_use
 async def get_dashboard(current_user: dict = Depends(get_current_user)):
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     
-    # Today's events
     todays_events = await db.events.find({"event_date": today}, {"_id": 0}).to_list(100)
-    
-    # Today's expenses
     todays_expenses = await db.expenses.find({"expense_date": today}, {"_id": 0}).to_list(100)
     total_today_expenses = sum(e['amount'] for e in todays_expenses)
     
-    # Today's payments received
     todays_payments = await db.payments.find({}, {"_id": 0}).to_list(1000)
     todays_payments = [p for p in todays_payments if p.get('payment_date', '').startswith(today)]
     total_today_payments = sum(p['amount'] for p in todays_payments)
     
-    # Pending payments calculation
     all_events = await db.events.find({}, {"_id": 0}).to_list(1000)
     all_payments = await db.payments.find({}, {"_id": 0}).to_list(1000)
     
@@ -465,15 +869,17 @@ async def get_dashboard(current_user: dict = Depends(get_current_user)):
                 "pending": pending
             })
     
-    # Follow-up reminders (due today or overdue)
     leads = await db.leads.find({}, {"_id": 0}).to_list(1000)
     follow_ups = [l for l in leads if l.get('follow_up_date', '') <= today and l.get('status') != 'Cold']
     
-    # Total stats
+    # Slot booking requests
+    pending_bookings = await db.slot_bookings.find({"status": "Pending"}, {"_id": 0}).to_list(100)
+    
     total_customers = await db.customers.count_documents({})
     total_events = await db.events.count_documents({})
     total_leads = await db.leads.count_documents({})
     hot_leads = await db.leads.count_documents({"status": "Hot"})
+    total_staff = await db.users.count_documents({"role": "staff"})
     
     return {
         "todays_events": todays_events,
@@ -485,11 +891,14 @@ async def get_dashboard(current_user: dict = Depends(get_current_user)):
         "pending_payments": pending_payments,
         "total_pending_amount": sum(p['pending'] for p in pending_payments),
         "follow_up_reminders": follow_ups,
+        "pending_bookings": pending_bookings,
+        "pending_bookings_count": len(pending_bookings),
         "stats": {
             "total_customers": total_customers,
             "total_events": total_events,
             "total_leads": total_leads,
-            "hot_leads": hot_leads
+            "hot_leads": hot_leads,
+            "total_staff": total_staff
         }
     }
 
@@ -529,11 +938,9 @@ async def get_payment_tracking(current_user: dict = Depends(get_current_user)):
 async def export_events(current_user: dict = Depends(get_current_user)):
     events = await db.events.find({}, {"_id": 0}).to_list(1000)
     df = pd.DataFrame(events)
-    
     output = BytesIO()
     df.to_excel(output, index=False, sheet_name='Events')
     output.seek(0)
-    
     return StreamingResponse(
         output,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -544,11 +951,9 @@ async def export_events(current_user: dict = Depends(get_current_user)):
 async def export_expenses(current_user: dict = Depends(get_current_user)):
     expenses = await db.expenses.find({}, {"_id": 0}).to_list(1000)
     df = pd.DataFrame(expenses)
-    
     output = BytesIO()
     df.to_excel(output, index=False, sheet_name='Expenses')
     output.seek(0)
-    
     return StreamingResponse(
         output,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -559,11 +964,9 @@ async def export_expenses(current_user: dict = Depends(get_current_user)):
 async def export_payments(current_user: dict = Depends(get_current_user)):
     payments = await db.payments.find({}, {"_id": 0}).to_list(1000)
     df = pd.DataFrame(payments)
-    
     output = BytesIO()
     df.to_excel(output, index=False, sheet_name='Payments')
     output.seek(0)
-    
     return StreamingResponse(
         output,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -574,11 +977,9 @@ async def export_payments(current_user: dict = Depends(get_current_user)):
 async def export_leads(current_user: dict = Depends(get_current_user)):
     leads = await db.leads.find({}, {"_id": 0}).to_list(1000)
     df = pd.DataFrame(leads)
-    
     output = BytesIO()
     df.to_excel(output, index=False, sheet_name='Leads')
     output.seek(0)
-    
     return StreamingResponse(
         output,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

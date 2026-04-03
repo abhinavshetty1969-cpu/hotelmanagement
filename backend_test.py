@@ -12,6 +12,8 @@ class HotelManagementAPITester:
         self.api_url = f"{base_url}/api"
         self.token = None
         self.user_id = None
+        self.customer_token = None
+        self.staff_token = None
         self.tests_run = 0
         self.tests_passed = 0
         self.test_data = {}
@@ -57,45 +59,152 @@ class HotelManagementAPITester:
         except Exception as e:
             return False, f"Request failed: {str(e)}"
 
-    def test_user_registration(self):
-        """Test user registration with admin role"""
-        test_username = f"admin_test_{datetime.now().strftime('%H%M%S')}"
+    def test_admin_login(self):
+        """Test admin login with hardcoded credentials"""
         data = {
-            "username": test_username,
-            "password": "admin123",
-            "role": "admin",
-            "full_name": "Test Admin User"
-        }
-        
-        success, response = self.make_request('POST', 'auth/register', data, 200)
-        if success:
-            self.test_data['admin_username'] = test_username
-            self.test_data['admin_password'] = "admin123"
-        return self.log_test("User Registration (Admin)", success, response if not success else "")
-
-    def test_user_login(self):
-        """Test user login with valid credentials"""
-        # Try with the test credentials from review request first
-        data = {
-            "username": "admin",
+            "email": "admin1@gmail.com",
             "password": "admin123"
         }
         
-        success, response = self.make_request('POST', 'auth/login', data, 200)
-        
-        # If default admin doesn't exist, try with the one we just created
-        if not success and 'admin_username' in self.test_data:
-            data = {
-                "username": self.test_data['admin_username'],
-                "password": self.test_data['admin_password']
-            }
-            success, response = self.make_request('POST', 'auth/login', data, 200)
-        
+        success, response = self.make_request('POST', 'auth/admin-login', data, 200)
         if success and isinstance(response, dict):
             self.token = response.get('token')
             self.user_id = response.get('user', {}).get('id')
             
-        return self.log_test("User Login", success, response if not success else "")
+        return self.log_test("Admin Login", success, response if not success else "")
+
+    def test_staff_management(self):
+        """Test staff creation and login"""
+        # Create staff member (requires admin token)
+        staff_data = {
+            "username": "johnstaff",
+            "password": "staff123",
+            "full_name": "John Staff Member",
+            "email": "john@staff.com"
+        }
+        
+        success, response = self.make_request('POST', 'staff', staff_data, 200)
+        if not success:
+            return self.log_test("Staff Management", False, f"Staff creation failed: {response}")
+        
+        # Test staff login
+        login_data = {
+            "username": "johnstaff",
+            "password": "staff123"
+        }
+        
+        success, response = self.make_request('POST', 'auth/staff-login', login_data, 200)
+        if success and isinstance(response, dict):
+            self.staff_token = response.get('token')
+        
+        if not success:
+            return self.log_test("Staff Management", False, f"Staff login failed: {response}")
+        
+        # Get staff list
+        success, response = self.make_request('GET', 'staff', expect_status=200)
+        if not success:
+            return self.log_test("Staff Management", False, f"Get staff failed: {response}")
+        
+        return self.log_test("Staff Management", True)
+
+    def test_customer_portal_auth(self):
+        """Test customer registration and login"""
+        # Customer registration
+        customer_data = {
+            "name": "Test Customer User",
+            "email": "customer@test.com",
+            "phone": "9876543210",
+            "password": "customer123"
+        }
+        
+        success, response = self.make_request('POST', 'customer/register', customer_data, 200)
+        if not success:
+            return self.log_test("Customer Portal Auth", False, f"Customer registration failed: {response}")
+        
+        if success and isinstance(response, dict):
+            self.customer_token = response.get('token')
+            self.test_data['customer_id'] = response.get('user', {}).get('id')
+        
+        # Customer login
+        login_data = {
+            "email": "customer@test.com",
+            "password": "customer123"
+        }
+        
+        # Store current token and switch to customer
+        admin_token = self.token
+        self.token = None
+        
+        success, response = self.make_request('POST', 'customer/login', login_data, 200)
+        if success and isinstance(response, dict):
+            self.customer_token = response.get('token')
+        
+        # Restore admin token
+        self.token = admin_token
+        
+        return self.log_test("Customer Portal Auth", success, response if not success else "")
+
+    def test_customer_slot_booking(self):
+        """Test customer slot booking functionality"""
+        if not self.customer_token:
+            return self.log_test("Customer Slot Booking", False, "No customer token available")
+        
+        # Store admin token and use customer token
+        admin_token = self.token
+        self.token = self.customer_token
+        
+        # Test booking a slot
+        booking_data = {
+            "event_date": (datetime.now() + timedelta(days=45)).strftime("%Y-%m-%d"),
+            "event_type": "Wedding",
+            "number_of_guests": 200,
+            "event_timing": "7 PM - 12 AM",
+            "venue_preference": "Garden Area",
+            "special_requests": "Vegetarian menu preferred"
+        }
+        
+        success, response = self.make_request('POST', 'customer/book-slot', booking_data, 200)
+        if not success:
+            self.token = admin_token
+            return self.log_test("Customer Slot Booking", False, f"Slot booking failed: {response}")
+        
+        booking_id = response.get('id')
+        self.test_data['booking_id'] = booking_id
+        
+        # Test getting customer bookings
+        success, response = self.make_request('GET', 'customer/my-bookings', expect_status=200)
+        if not success:
+            self.token = admin_token
+            return self.log_test("Customer Slot Booking", False, f"Get bookings failed: {response}")
+        
+        # Test getting past events (should be empty for new customer)
+        success, response = self.make_request('GET', 'customer/past-events', expect_status=200)
+        
+        # Restore admin token
+        self.token = admin_token
+        
+        return self.log_test("Customer Slot Booking", success, response if not success else "")
+
+    def test_admin_slot_management(self):
+        """Test admin slot booking management"""
+        if 'booking_id' not in self.test_data:
+            return self.log_test("Admin Slot Management", False, "No booking available for testing")
+        
+        # Get all slot bookings
+        success, response = self.make_request('GET', 'slot-bookings', expect_status=200)
+        if not success:
+            return self.log_test("Admin Slot Management", False, f"Get slot bookings failed: {response}")
+        
+        # Update booking status to Confirmed
+        booking_id = self.test_data['booking_id']
+        success, response = self.make_request('PUT', f'slot-bookings/{booking_id}/status?status=Confirmed', expect_status=200)
+        if not success:
+            return self.log_test("Admin Slot Management", False, f"Update booking status failed: {response}")
+        
+        # Update booking status to Rejected
+        success, response = self.make_request('PUT', f'slot-bookings/{booking_id}/status?status=Rejected', expect_status=200)
+        
+        return self.log_test("Admin Slot Management", success, response if not success else "")
 
     def test_auth_me(self):
         """Test getting current user info"""
@@ -312,20 +421,31 @@ class HotelManagementAPITester:
 
     def run_all_tests(self):
         """Run all API tests"""
-        print("🚀 Starting Hotel Management API Tests")
-        print("=" * 50)
+        print("🚀 Starting Hotel Management API Tests (Dual Portal System)")
+        print("=" * 60)
         
-        # Authentication tests
-        self.test_user_registration()
-        self.test_user_login()
+        # Test dual authentication system
+        print("\n🔐 Testing Authentication Systems:")
+        self.test_admin_login()
         
         if not self.token:
-            print("❌ Cannot proceed without authentication token")
+            print("❌ Cannot proceed without admin authentication token")
             return False
         
         self.test_auth_me()
+        self.test_staff_management()
+        self.test_customer_portal_auth()
         
-        # CRUD tests
+        # Test customer portal features
+        print("\n👤 Testing Customer Portal:")
+        self.test_customer_slot_booking()
+        
+        # Test admin slot management
+        print("\n🏢 Testing Admin Slot Management:")
+        self.test_admin_slot_management()
+        
+        # Test existing CRUD operations
+        print("\n📋 Testing Core CRUD Operations:")
         self.test_customer_crud()
         self.test_event_crud()
         self.test_expense_crud()
@@ -333,14 +453,16 @@ class HotelManagementAPITester:
         self.test_lead_crud()
         
         # Dashboard and analytics
+        print("\n📊 Testing Dashboard & Analytics:")
         self.test_dashboard_api()
         self.test_payment_tracking()
         
         # Export functionality
+        print("\n📤 Testing Export Functionality:")
         self.test_export_functionality()
         
         # Summary
-        print("\n" + "=" * 50)
+        print("\n" + "=" * 60)
         print(f"📊 Test Results: {self.tests_passed}/{self.tests_run} passed")
         success_rate = (self.tests_passed / self.tests_run) * 100 if self.tests_run > 0 else 0
         print(f"📈 Success Rate: {success_rate:.1f}%")
