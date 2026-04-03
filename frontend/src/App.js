@@ -1,4 +1,5 @@
-import { useState, useEffect, createContext, useContext, useCallback } from "react";
+import { useState, useEffect, createContext, useContext, useCallback, useRef } from "react";
+import { useReactToPrint } from "react-to-print";
 import "@/App.css";
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from "react-router-dom";
 import axios from "axios";
@@ -122,6 +123,90 @@ const ProtectedRoute = ({ children, allowedTypes = [] }) => {
   return children;
 };
 
+// ============== QUOTATION TEMPLATE ==============
+const QuotationTemplate = ({ event, customer }) => {
+  if (!event || !customer) return null;
+  const totalAmount = (event.per_plate_cost || 0) * (event.number_of_guests || 0);
+  const finalAmount = totalAmount - (event.discount || 0);
+
+  return (
+    <div className="quotation-print-container" style={{ padding: "40px", backgroundColor: "white", color: "black", minHeight: "297mm" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", borderBottom: "2px solid #1A362D", paddingBottom: "20px", marginBottom: "30px" }}>
+        <div>
+          <h1 style={{ margin: 0, color: "#1A362D", fontSize: "28px" }}>CATERPRO</h1>
+          <p style={{ margin: "5px 0", fontSize: "14px" }}>Premium Catering & Event Management</p>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <h2 style={{ margin: 0, fontSize: "24px", color: "#64748B" }}>QUOTATION</h2>
+          <p style={{ margin: "5px 0" }}>Date: {format(new Date(), "dd/MM/yyyy")}</p>
+          <p style={{ margin: "5px 0" }}>ID: #{event.id?.slice(0, 8)}</p>
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "40px", marginBottom: "40px" }}>
+        <div>
+          <h3 style={{ color: "#1A362D", borderBottom: "1px solid #E2E8F0", paddingBottom: "5px" }}>Client Details</h3>
+          <p><strong>Name:</strong> {customer.client_name}</p>
+          <p><strong>Phone:</strong> {customer.phone_number}</p>
+          <p><strong>Email:</strong> {customer.email || "-"}</p>
+          <p><strong>Address:</strong> {customer.address || "-"}</p>
+        </div>
+        <div>
+          <h3 style={{ color: "#1A362D", borderBottom: "1px solid #E2E8F0", paddingBottom: "5px" }}>Event Details</h3>
+          <p><strong>Type:</strong> {event.event_type}</p>
+          <p><strong>Date:</strong> {event.event_date}</p>
+          <p><strong>Venue:</strong> {event.venue_name}</p>
+          <p><strong>Guests:</strong> {event.number_of_guests}</p>
+          <p><strong>Timing:</strong> {event.event_timing}</p>
+        </div>
+      </div>
+
+      <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: "40px" }}>
+        <thead>
+          <tr style={{ backgroundColor: "#F8FAFC", textAlign: "left" }}>
+            <th style={{ padding: "12px", border: "1px solid #E2E8F0" }}>Description</th>
+            <th style={{ padding: "12px", border: "1px solid #E2E8F0" }}>Quantity</th>
+            <th style={{ padding: "12px", border: "1px solid #E2E8F0" }}>Rate</th>
+            <th style={{ padding: "12px", border: "1px solid #E2E8F0" }}>Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style={{ padding: "12px", border: "1px solid #E2E8F0" }}>Catering Services - Per Plate Charge ({event.event_type})</td>
+            <td style={{ padding: "12px", border: "1px solid #E2E8F0" }}>{event.number_of_guests}</td>
+            <td style={{ padding: "12px", border: "1px solid #E2E8F0" }}>₹{event.per_plate_cost}</td>
+            <td style={{ padding: "12px", border: "1px solid #E2E8F0" }}>₹{totalAmount.toLocaleString()}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div style={{ marginLeft: "auto", width: "300px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0" }}>
+          <span>Subtotal:</span>
+          <span>₹{totalAmount.toLocaleString()}</span>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", color: "#DC2626" }}>
+          <span>Discount:</span>
+          <span>-₹{event.discount?.toLocaleString() || "0"}</span>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", padding: "15px 0", borderTop: "2px solid #1A362D", fontWeight: "bold", fontSize: "18px" }}>
+          <span>Total Amount:</span>
+          <span>₹{finalAmount.toLocaleString()}</span>
+        </div>
+      </div>
+
+      <div style={{ marginTop: "60px", fontSize: "12px", color: "#64748B" }}>
+        <p><strong>Terms & Conditions:</strong></p>
+        <ol>
+          <li>50% advance payment required for confirmation.</li>
+          <li>Remaining balance to be cleared on or before the event date.</li>
+          <li>Cancellation charges apply as per company policy.</li>
+        </ol>
+      </div>
+    </div>
+  );
+};
+
 // ============== LANDING PAGE ==============
 const LandingPage = () => {
   const navigate = useNavigate();
@@ -142,7 +227,7 @@ const LandingPage = () => {
       <div className="landing-hero">
         <div className="landing-overlay"></div>
         <div className="landing-content">
-          <h1>EventVenue Pro</h1>
+          <h1>CaterPro</h1>
           <p>Premium Event Management & Catering Services</p>
           <div className="landing-buttons">
             <button className="btn btn-primary btn-lg" onClick={() => navigate("/customer/login")} data-testid="customer-login-btn">
@@ -189,7 +274,7 @@ const CustomerLoginPage = () => {
     <div className="login-container" data-testid="customer-login-page">
       <div className="login-image customer-bg">
         <div className="login-image-content">
-          <h1>Welcome to EventVenue Pro</h1>
+          <h1>Welcome to CaterPro</h1>
           <p>View your past events, photos, reviews & book new slots</p>
         </div>
       </div>
@@ -270,7 +355,7 @@ const AdminLoginPage = () => {
     <div className="login-container" data-testid="admin-login-page">
       <div className="login-image">
         <div className="login-image-content">
-          <h1>EventVenue Pro</h1>
+          <h1>CaterPro</h1>
           <p>Manage your hotel bookings and events with ease</p>
         </div>
       </div>
@@ -356,7 +441,7 @@ const AdminSidebar = ({ isOpen, setIsOpen }) => {
       <aside className={`sidebar ${isOpen ? "open" : ""}`} data-testid="admin-sidebar">
         <div className="sidebar-logo">
           <Calendar size={28} style={{ color: "#1A362D" }} />
-          <h1>EventVenue Pro</h1>
+          <h1>CaterPro</h1>
         </div>
         <nav className="sidebar-nav">
           {navItems.map((item) => (
@@ -396,7 +481,7 @@ const AdminLayout = ({ children }) => {
         <button onClick={() => setSidebarOpen(true)} className="btn-ghost">
           <Menu size={24} />
         </button>
-        <h1 style={{ fontSize: "1rem", fontWeight: 600 }}>EventVenue Pro</h1>
+        <h1 style={{ fontSize: "1rem", fontWeight: 600 }}>CaterPro</h1>
         <div style={{ width: 24 }} />
       </div>
       <AdminSidebar isOpen={sidebarOpen} setIsOpen={setSidebarOpen} />
@@ -434,7 +519,7 @@ const CustomerSidebar = ({ isOpen, setIsOpen }) => {
       <aside className={`sidebar ${isOpen ? "open" : ""}`} data-testid="customer-sidebar">
         <div className="sidebar-logo">
           <Calendar size={28} style={{ color: "#1A362D" }} />
-          <h1>EventVenue Pro</h1>
+          <h1>CaterPro</h1>
         </div>
         <nav className="sidebar-nav">
           {navItems.map((item) => (
@@ -474,7 +559,7 @@ const CustomerLayout = ({ children }) => {
         <button onClick={() => setSidebarOpen(true)} className="btn-ghost">
           <Menu size={24} />
         </button>
-        <h1 style={{ fontSize: "1rem", fontWeight: 600 }}>EventVenue Pro</h1>
+        <h1 style={{ fontSize: "1rem", fontWeight: 600 }}>CaterPro</h1>
         <div style={{ width: 24 }} />
       </div>
       <CustomerSidebar isOpen={sidebarOpen} setIsOpen={setSidebarOpen} />
@@ -505,6 +590,23 @@ const Modal = ({ isOpen, onClose, title, children }) => {
 const CustomerDashboardPage = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const [alerts, setAlerts] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchAlerts = useCallback(async () => {
+    try {
+      const res = await axios.get(`${API}/customer/alerts`);
+      setAlerts(res.data);
+    } catch (err) {
+      console.error("Failed to fetch alerts", err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (user) fetchAlerts();
+  }, [user, fetchAlerts]);
 
   return (
     <CustomerLayout>
@@ -512,6 +614,20 @@ const CustomerDashboardPage = () => {
         <div className="page-header">
           <h1>Welcome, {user?.name || "Customer"}!</h1>
         </div>
+
+        {alerts.length > 0 && (
+          <div className="alert-section" style={{ marginBottom: "2rem" }}>
+            {alerts.map((alert, idx) => (
+              <div key={idx} className="alert-card warning" style={{ display: "flex", alignItems: "center", gap: "1rem", padding: "1rem", background: "#FFFBEB", borderLeft: "4px solid #D97706", borderRadius: "8px", marginBottom: "0.75rem" }}>
+                <AlertCircle size={24} color="#D97706" />
+                <div>
+                  <h4 style={{ margin: 0, color: "#92400E" }}>Payment Due Soon</h4>
+                  <p style={{ margin: 0, fontSize: "0.875rem", color: "#B45309" }}>{alert.msg}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         <div className="customer-welcome-card">
           <div className="welcome-content">
@@ -537,8 +653,105 @@ const CustomerDashboardPage = () => {
             <p>Check the status of your booking requests</p>
           </div>
         </div>
+
+        <PendingQuotationsSection />
       </div>
     </CustomerLayout>
+  );
+};
+
+const PendingQuotationsSection = () => {
+  const [events, setEvents] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedEvent, setSelectedEvent] = useState(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [rejectModalOpen, setRejectModalOpen] = useState(false);
+  const [rejectionReason, setRejectionReason] = useState("");
+  const { user } = useAuth();
+  
+  const fetchEvents = useCallback(async () => {
+    try {
+      const res = await axios.get(`${API}/customer/events`);
+      setEvents(res.data.filter(e => e.quotation_status === "Sent"));
+    } catch (err) {
+      console.error("Failed to fetch events", err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (user) fetchEvents();
+  }, [user, fetchEvents]);
+
+  const handleAction = async (status, reason = "") => {
+    try {
+      await axios.put(`${API}/events/${selectedEvent.id}/quotation-status?status=${status}&rejection_reason=${reason}`);
+      toast.success(`Quotation ${status}`);
+      setModalOpen(false);
+      setRejectModalOpen(false);
+      fetchEvents();
+    } catch (err) {
+      toast.error("Failed to update status");
+    }
+  };
+
+  if (loading) return null;
+  if (events.length === 0) return null;
+
+  return (
+    <div style={{ marginTop: "2rem" }}>
+      <div className="page-header">
+        <h3>Pending Quotations</h3>
+      </div>
+      <div className="events-grid">
+        {events.map((event) => (
+          <div key={event.id} className="data-card" style={{ padding: "1.5rem", borderLeft: "4px solid #C85A3C" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "1rem" }}>
+              <div>
+                <h4 style={{ margin: 0, fontSize: "1.1rem" }}>{event.event_type}</h4>
+                <p style={{ margin: "0.25rem 0", color: "#64748B", fontSize: "0.875rem" }}>{event.event_date} @ {event.venue_name}</p>
+              </div>
+              <span className="badge badge-sent">Quotation Sent</span>
+            </div>
+            <div style={{ display: "flex", gap: "0.75rem" }}>
+              <button className="btn btn-primary btn-sm" onClick={() => { setSelectedEvent(event); setModalOpen(true); }}>
+                View & Action
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title="Review Quotation">
+        <div className="modal-body" style={{ maxHeight: "60vh", overflowY: "auto", background: "#F1F5F9", padding: "20px" }}>
+          <QuotationTemplate event={selectedEvent} customer={{ client_name: user.name, phone_number: user.username, email: user.email, address: "" }} />
+        </div>
+        <div className="modal-footer">
+          <button type="button" className="btn btn-outline" onClick={() => setModalOpen(false)}>Close</button>
+          <button type="button" className="btn btn-outline" style={{ color: "#DC2626" }} onClick={() => setRejectModalOpen(true)}>Reject</button>
+          <button type="button" className="btn btn-primary" onClick={() => handleAction("Approved")}>Approve Quotation</button>
+        </div>
+      </Modal>
+
+      <Modal isOpen={rejectModalOpen} onClose={() => setRejectModalOpen(false)} title="Reject Quotation">
+        <div className="modal-body">
+          <p style={{ marginBottom: "1rem" }}>Please specify the reason for rejection:</p>
+          <div className="form-group">
+            <label>Rejection Reason *</label>
+            <select className="form-select" value={rejectionReason} onChange={(e) => setRejectionReason(e.target.value)}>
+              <option value="Prices are more">Prices are more</option>
+              <option value="Event is cancelled">Event is cancelled</option>
+              <option value="Others">Others</option>
+            </select>
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button type="button" className="btn btn-outline" onClick={() => setRejectModalOpen(false)}>Cancel</button>
+          <button type="button" className="btn btn-primary" style={{ background: "#DC2626" }} onClick={() => handleAction("Rejected", rejectionReason)}>Confirm Rejection</button>
+        </div>
+      </Modal>
+    </div>
   );
 };
 
@@ -743,9 +956,21 @@ const CustomerBookSlotPage = () => {
                 <label>Preferred Timing *</label>
                 <input className="form-input" value={formData.event_timing} onChange={(e) => setFormData({ ...formData, event_timing: e.target.value })} placeholder="e.g., 6 PM - 11 PM" required data-testid="slot-timing-input" />
               </div>
-              <div className="form-group full-width">
-                <label>Venue Preference</label>
-                <input className="form-input" value={formData.venue_preference} onChange={(e) => setFormData({ ...formData, venue_preference: e.target.value })} placeholder="Any specific venue or location preference" data-testid="slot-venue-input" />
+              <div className="form-group">
+                <label>Venue Preference *</label>
+                <select 
+                  className="form-select" 
+                  value={formData.venue_preference} 
+                  onChange={(e) => setFormData({ ...formData, venue_preference: e.target.value })} 
+                  required
+                  data-testid="slot-venue-input"
+                >
+                  <option value="">Select Venue</option>
+                  <option value="Hall 1">Hall 1 (Yeoor Hills)</option>
+                  <option value="Hall 2">Hall 2 (Yeoor Hills)</option>
+                  <option value="Outdoor Lawn">Outdoor Lawn</option>
+                  <option value="Other">Other</option>
+                </select>
               </div>
               <div className="form-group full-width">
                 <label>Special Requests</label>
@@ -1076,6 +1301,9 @@ const StaffManagementPage = () => {
 const SlotRequestsPage = () => {
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [selectedBooking, setSelectedBooking] = useState(null);
+  const [formData, setFormData] = useState({ per_plate_cost: 0, discount: 0 });
 
   const fetchBookings = useCallback(async () => {
     try {
@@ -1097,6 +1325,29 @@ const SlotRequestsPage = () => {
       fetchBookings();
     } catch {
       toast.error("Failed to update status");
+    }
+  };
+
+  const openQuoteModal = (booking) => {
+    setSelectedBooking(booking);
+    setFormData({ per_plate_cost: 0, discount: 0 });
+    setModalOpen(true);
+  };
+
+  const handleMakeQuotation = async (e) => {
+    e.preventDefault();
+    try {
+      await axios.post(`${API}/slot-bookings/${selectedBooking.id}/accept`, null, {
+        params: {
+          per_plate_cost: formData.per_plate_cost,
+          discount: formData.discount
+        }
+      });
+      toast.success("Quotation sent and booking confirmed!");
+      setModalOpen(false);
+      fetchBookings();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Failed to make quotation");
     }
   };
 
@@ -1130,7 +1381,7 @@ const SlotRequestsPage = () => {
                   <th>Event Date</th>
                   <th>Type</th>
                   <th>Guests</th>
-                  <th>Timing</th>
+                  <th>Venue Pref.</th>
                   <th>Status</th>
                   <th>Actions</th>
                 </tr>
@@ -1143,16 +1394,16 @@ const SlotRequestsPage = () => {
                     <td>{b.event_date}</td>
                     <td>{b.event_type}</td>
                     <td>{b.number_of_guests}</td>
-                    <td>{b.event_timing}</td>
+                    <td>{b.venue_preference}</td>
                     <td>{getStatusBadge(b.status)}</td>
                     <td>
                       {b.status === "Pending" && (
                         <div className="action-buttons">
-                          <button className="action-btn edit" onClick={() => updateStatus(b.id, "Confirmed")} title="Confirm">
-                            <Check size={14} />
+                          <button className="action-btn edit" onClick={() => openQuoteModal(b)} title="Make Quotation">
+                            <Edit2 size={14} /> Quote
                           </button>
                           <button className="action-btn delete" onClick={() => updateStatus(b.id, "Rejected")} title="Reject">
-                            <XCircle size={14} />
+                            <XCircle size={14} /> Reject
                           </button>
                         </div>
                       )}
@@ -1163,6 +1414,49 @@ const SlotRequestsPage = () => {
             </table>
           )}
         </div>
+
+        <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title="Make Quotation">
+          <form onSubmit={handleMakeQuotation}>
+            <div className="modal-body">
+              <p style={{ marginBottom: "1rem", fontSize: "0.875rem", color: "#64748B" }}>
+                Setting a Per Plate Cost will automatically send the quotation to <strong>{selectedBooking?.customer_name}</strong>.
+              </p>
+              <div className="form-group">
+                <label>Per Plate Cost (₹) *</label>
+                <input 
+                  type="number" 
+                  className="form-input" 
+                  value={formData.per_plate_cost} 
+                  onChange={(e) => setFormData({ ...formData, per_plate_cost: parseFloat(e.target.value) || 0 })} 
+                  required 
+                />
+              </div>
+              <div className="form-group">
+                <label>Discount (₹)</label>
+                <input 
+                  type="number" 
+                  className="form-input" 
+                  value={formData.discount} 
+                  onChange={(e) => setFormData({ ...formData, discount: parseFloat(e.target.value) || 0 })} 
+                />
+              </div>
+              <div style={{ background: "#F3F1EC", padding: "1rem", borderRadius: "0.5rem", marginTop: "1rem" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.5rem" }}>
+                  <span>Total (for {selectedBooking?.number_of_guests} guests):</span>
+                  <span>₹{(formData.per_plate_cost * (selectedBooking?.number_of_guests || 0)).toLocaleString()}</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 600 }}>
+                  <span>Final Quote Amount:</span>
+                  <span>₹{((formData.per_plate_cost * (selectedBooking?.number_of_guests || 0)) - formData.discount).toLocaleString()}</span>
+                </div>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn btn-outline" onClick={() => setModalOpen(false)}>Cancel</button>
+              <button type="submit" className="btn btn-primary">Create & Send Quotation</button>
+            </div>
+          </form>
+        </Modal>
       </div>
     </AdminLayout>
   );
@@ -1314,10 +1608,18 @@ const BookingsPage = () => {
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
+  const [quotationModalOpen, setQuotationModalOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState(null);
+  const [selectedEventForQuotation, setSelectedEventForQuotation] = useState(null);
+  const quotationRef = useRef();
+  
+  const handlePrint = useReactToPrint({
+    contentRef: quotationRef,
+  });
+
   const [formData, setFormData] = useState({
     customer_id: "", event_date: "", event_type: "Wedding", number_of_guests: 100,
-    event_timing: "", venue_name: "", per_plate_cost: 0, discount: 0, quotation_status: "Pending", notes: "", is_completed: false
+    event_timing: "", venue_name: "", per_plate_cost: 0, discount: 0, quotation_status: "Pending", notes: "", is_completed: false, advance_received: 0, due_date: ""
   });
 
   const fetchData = useCallback(async () => {
@@ -1378,12 +1680,12 @@ const BookingsPage = () => {
       setFormData({
         customer_id: event.customer_id, event_date: event.event_date, event_type: event.event_type,
         number_of_guests: event.number_of_guests, event_timing: event.event_timing, venue_name: event.venue_name,
-        per_plate_cost: event.per_plate_cost, discount: event.discount, quotation_status: event.quotation_status, notes: event.notes || "", is_completed: event.is_completed || false
+        per_plate_cost: event.per_plate_cost, discount: event.discount, quotation_status: event.quotation_status, notes: event.notes || "", is_completed: event.is_completed || false, advance_received: event.advance_received || 0, due_date: event.due_date || ""
       });
     } else {
       setFormData({
         customer_id: "", event_date: "", event_type: "Wedding", number_of_guests: 100,
-        event_timing: "", venue_name: "", per_plate_cost: 0, discount: 0, quotation_status: "Pending", notes: "", is_completed: false
+        event_timing: "", venue_name: "", per_plate_cost: 0, discount: 0, quotation_status: "Pending", notes: "", is_completed: false, advance_received: 0, due_date: ""
       });
     }
     setModalOpen(true);
@@ -1408,8 +1710,17 @@ const BookingsPage = () => {
   };
 
   const getStatusBadge = (status) => {
-    const classes = { Approved: "badge-approved", Sent: "badge-sent", Pending: "badge-pending" };
     return <span className={`badge ${classes[status] || "badge-pending"}`}>{status}</span>;
+  };
+
+  const sendQuotation = async (id) => {
+    try {
+      await axios.put(`${API}/events/${id}/quotation-status?status=Sent`);
+      toast.success("Quotation marked as Sent");
+      fetchData();
+    } catch {
+      toast.error("Failed to update status");
+    }
   };
 
   const totalAmount = formData.per_plate_cost * formData.number_of_guests;
@@ -1451,6 +1762,7 @@ const BookingsPage = () => {
                     <td>{e.is_completed ? <span className="badge badge-approved">Yes</span> : <button className="btn btn-sm btn-outline" onClick={() => markComplete(e.id)}>Mark Done</button>}</td>
                     <td>
                       <div className="action-buttons">
+                        <button className="action-btn edit" onClick={() => { setSelectedEventForQuotation(e); setQuotationModalOpen(true); }} title="View Quotation"><Receipt size={14} /></button>
                         <button className="action-btn edit" onClick={() => openModal(e)}><Edit2 size={14} /></button>
                         <button className="action-btn delete" onClick={() => handleDelete(e.id)}><Trash2 size={14} /></button>
                       </div>
@@ -1508,6 +1820,16 @@ const BookingsPage = () => {
                   <input type="number" className="form-input" value={formData.discount} onChange={(e) => setFormData({ ...formData, discount: parseFloat(e.target.value) || 0 })} />
                 </div>
               </div>
+              <div className="grid-2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+                <div className="form-group">
+                  <label>Advance Received (₹)</label>
+                  <input type="number" className="form-input" value={formData.advance_received} onChange={(e) => setFormData({ ...formData, advance_received: parseFloat(e.target.value) || 0 })} />
+                </div>
+                <div className="form-group">
+                  <label>Due Date</label>
+                  <input type="date" className="form-input" value={formData.due_date} onChange={(e) => setFormData({ ...formData, due_date: e.target.value })} />
+                </div>
+              </div>
               <div style={{ background: "#F3F1EC", padding: "1rem", borderRadius: "0.5rem", marginBottom: "1rem" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.5rem" }}><span>Total Amount:</span><span>₹{totalAmount.toLocaleString()}</span></div>
                 <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 600, fontSize: "1.125rem" }}><span>Final Amount:</span><span style={{ color: "#1A362D" }}>₹{finalAmount.toLocaleString()}</span></div>
@@ -1529,59 +1851,206 @@ const BookingsPage = () => {
             </div>
           </form>
         </Modal>
+
+        <Modal isOpen={quotationModalOpen} onClose={() => setQuotationModalOpen(false)} title="Event Quotation">
+          <div className="modal-body" style={{ maxHeight: "70vh", overflowY: "auto", background: "#F1F5F9", padding: "20px" }}>
+            <div ref={quotationRef}>
+              <QuotationTemplate 
+                event={selectedEventForQuotation} 
+                customer={customers.find(c => c.id === selectedEventForQuotation?.customer_id)} 
+              />
+            </div>
+          </div>
+          <div className="modal-footer">
+            <button type="button" className="btn btn-outline" onClick={() => setQuotationModalOpen(false)}>Close</button>
+            <button type="button" className="btn btn-outline" onClick={handlePrint}><Download size={18} /> Print / Save PDF</button>
+            {selectedEventForQuotation?.quotation_status === "Pending" && (
+              <button type="button" className="btn btn-primary" onClick={() => { sendQuotation(selectedEventForQuotation.id); setQuotationModalOpen(false); }}>Mark as Sent</button>
+            )}
+          </div>
+        </Modal>
       </div>
     </AdminLayout>
   );
 };
 
-// Expenses, Payments, Leads pages (shortened for space)
+// ============== EXPENSES PAGE ==============
 const ExpensesPage = () => {
   const [expenses, setExpenses] = useState([]);
+  const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
-  const [formData, setFormData] = useState({ expense_date: format(new Date(), "yyyy-MM-dd"), expense_type: "Vegetables", amount: 0, notes: "" });
+  const [formData, setFormData] = useState({ 
+    expense_date: format(new Date(), "yyyy-MM-dd"), 
+    expense_type: "Vegetables", 
+    category: "Spend",
+    amount: 0, 
+    due_date: "",
+    customer_id: "",
+    notes: "" 
+  });
 
-  const fetchExpenses = useCallback(async () => {
-    try { const res = await axios.get(`${API}/expenses`); setExpenses(res.data); } catch { toast.error("Failed to load expenses"); } finally { setLoading(false); }
+  const fetchData = useCallback(async () => {
+    try { 
+      const [expRes, custRes] = await Promise.all([
+        axios.get(`${API}/expenses`),
+        axios.get(`${API}/customers`)
+      ]);
+      setExpenses(expRes.data); 
+      setCustomers(custRes.data);
+    } catch { 
+      toast.error("Failed to load data"); 
+    } finally { 
+      setLoading(false); 
+    }
   }, []);
 
-  useEffect(() => { fetchExpenses(); }, [fetchExpenses]);
+  useEffect(() => { fetchData(); }, [fetchData]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    try { await axios.post(`${API}/expenses`, formData); toast.success("Expense added"); fetchExpenses(); setModalOpen(false); setFormData({ expense_date: format(new Date(), "yyyy-MM-dd"), expense_type: "Vegetables", amount: 0, notes: "" }); } catch { toast.error("Failed to add expense"); }
+    try { 
+      await axios.post(`${API}/expenses`, formData); 
+      toast.success("Expense recorded"); 
+      fetchData(); 
+      setModalOpen(false); 
+      setFormData({ expense_date: format(new Date(), "yyyy-MM-dd"), expense_type: "Vegetables", category: "Spend", amount: 0, due_date: "", customer_id: "", notes: "" }); 
+    } catch { 
+      toast.error("Failed to add expense"); 
+    }
+  };
+
+  const handleSettle = async (id) => {
+    try {
+      await axios.put(`${API}/expenses/${id}/settle`);
+      toast.success("Payment settled and balance updated");
+      fetchData();
+    } catch {
+      toast.error("Failed to settle payment");
+    }
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm("Delete this expense?")) return;
-    try { await axios.delete(`${API}/expenses/${id}`); toast.success("Expense deleted"); fetchExpenses(); } catch { toast.error("Delete failed"); }
+    if (!window.confirm("Delete this entry?")) return;
+    try { await axios.delete(`${API}/expenses/${id}`); toast.success("Entry deleted"); fetchData(); } catch { toast.error("Delete failed"); }
   };
 
   const handleExport = async () => {
     try { const res = await axios.get(`${API}/export/expenses`, { responseType: "blob" }); const url = window.URL.createObjectURL(new Blob([res.data])); const link = document.createElement("a"); link.href = url; link.setAttribute("download", "expenses.xlsx"); document.body.appendChild(link); link.click(); link.remove(); toast.success("Export downloaded"); } catch { toast.error("Export failed"); }
   };
 
-  const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
+  const totalSpent = expenses.filter(e => e.category === "Spend").reduce((sum, e) => sum + e.amount, 0);
+  const totalReceived = expenses.filter(e => e.category === "Received").reduce((sum, e) => sum + e.amount, 0);
+  const yetToReceive = expenses.filter(e => e.category === "Yet to Receive" && !e.is_settled).reduce((sum, e) => sum + e.amount, 0);
+  const duePayment = expenses.filter(e => e.category === "Due Payment" && !e.is_settled).reduce((sum, e) => sum + e.amount, 0);
+
+  const getCategoryBadge = (cat) => {
+    const classes = { Spend: "badge-hot", Received: "badge-paid", "Yet to Receive": "badge-warm", "Due Payment": "badge-hot" };
+    return <span className={`badge ${classes[cat] || "badge-pending"}`}>{cat}</span>;
+  };
 
   return (
     <AdminLayout>
       <div data-testid="expenses-page">
-        <div className="page-header"><h1>Daily Expenses</h1><div style={{ display: "flex", gap: "0.75rem" }}><button className="btn btn-outline" onClick={handleExport}><Download size={18} /> Export</button><button className="btn btn-primary" onClick={() => setModalOpen(true)}><Plus size={18} /> Add Expense</button></div></div>
-        <div className="stat-card" style={{ marginBottom: "1.5rem" }}><div className="stat-label">Total Expenses</div><div className="stat-value" style={{ color: "#C85A3C" }}>₹{totalExpenses.toLocaleString()}</div></div>
+        <div className="page-header">
+          <h1>Expense & Reconciliation</h1>
+          <div style={{ display: "flex", gap: "0.75rem" }}>
+            <button className="btn btn-outline" onClick={handleExport}><Download size={18} /> Export</button>
+            <button className="btn btn-primary" onClick={() => setModalOpen(true)}><Plus size={18} /> Add Entry</button>
+          </div>
+        </div>
+
+        <div className="stats-grid" style={{ gridTemplateColumns: "repeat(4, 1fr)", marginBottom: "1.5rem" }}>
+          <div className="stat-card"><div className="stat-label">Total Spent</div><div className="stat-value" style={{ color: "#DC2626" }}>₹{totalSpent.toLocaleString()}</div></div>
+          <div className="stat-card"><div className="stat-label">Total Received</div><div className="stat-value" style={{ color: "#10B981" }}>₹{totalReceived.toLocaleString()}</div></div>
+          <div className="stat-card"><div className="stat-label">Yet to Receive</div><div className="stat-value" style={{ color: "#D97706" }}>₹{yetToReceive.toLocaleString()}</div></div>
+          <div className="stat-card"><div className="stat-label">Due to Pay</div><div className="stat-value" style={{ color: "#DC2626" }}>₹{duePayment.toLocaleString()}</div></div>
+        </div>
+
         <div className="data-card">
-          {loading ? <p style={{ padding: "2rem", textAlign: "center" }}>Loading...</p> : expenses.length === 0 ? <div className="empty-state"><Receipt size={48} style={{ color: "#E5E3DF", marginBottom: "1rem" }} /><h3>No Expenses Recorded</h3></div> : (
-            <table className="data-table"><thead><tr><th>Date</th><th>Type</th><th>Amount</th><th>Notes</th><th>Actions</th></tr></thead><tbody>{expenses.map((e) => (<tr key={e.id}><td>{e.expense_date}</td><td><span className="badge badge-pending">{e.expense_type}</span></td><td style={{ fontWeight: 500 }}>₹{e.amount.toLocaleString()}</td><td>{e.notes || "-"}</td><td><button className="action-btn delete" onClick={() => handleDelete(e.id)}><Trash2 size={14} /></button></td></tr>))}</tbody></table>
+          {loading ? <p style={{ padding: "2rem", textAlign: "center" }}>Loading...</p> : expenses.length === 0 ? <div className="empty-state"><Receipt size={48} style={{ color: "#E5E3DF", marginBottom: "1rem" }} /><h3>No Entries recorded</h3></div> : (
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Category</th>
+                  <th>Type</th>
+                  <th>Amount</th>
+                  <th>Status</th>
+                  <th>Due Date</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {expenses.map((e) => (
+                  <tr key={e.id}>
+                    <td>{e.expense_date}</td>
+                    <td>{getCategoryBadge(e.category)}</td>
+                    <td>{e.expense_type}</td>
+                    <td style={{ fontWeight: 600, color: (e.category === "Spend" || e.category === "Due Payment") ? "#DC2626" : "#10B981" }}>
+                      ₹{e.amount.toLocaleString()}
+                    </td>
+                    <td>
+                      {e.is_settled ? (
+                        <span style={{ color: "#10B981", fontSize: "0.75rem", fontWeight: 600 }}>SETTLED</span>
+                      ) : (e.category === "Yet to Receive" || e.category === "Due Payment") ? (
+                        <button className="btn btn-ghost btn-sm" style={{ fontSize: "0.65rem", padding: "2px 6px" }} onClick={() => handleSettle(e.id)}>Mark Settled</button>
+                      ) : (
+                        <span style={{ color: "#64748B", fontSize: "0.75rem" }}>Completed</span>
+                      )}
+                    </td>
+                    <td>{e.due_date || "-"}</td>
+                    <td><button className="action-btn delete" onClick={() => handleDelete(e.id)}><Trash2 size={14} /></button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           )}
         </div>
-        <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title="Add Expense">
+
+        <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title="Record Transaction">
           <form onSubmit={handleSubmit}>
             <div className="modal-body">
-              <div className="form-group"><label>Date *</label><input type="date" className="form-input" value={formData.expense_date} onChange={(e) => setFormData({ ...formData, expense_date: e.target.value })} required /></div>
-              <div className="form-group"><label>Expense Type *</label><select className="form-select" value={formData.expense_type} onChange={(e) => setFormData({ ...formData, expense_type: e.target.value })}><option>Vegetables</option><option>Gas</option><option>Labour</option><option>Transport</option><option>Groceries</option><option>Utensils</option><option>Other</option></select></div>
+              <div className="form-group">
+                <label>Category *</label>
+                <select className="form-select" value={formData.category} onChange={(e) => setFormData({ ...formData, category: e.target.value })} required>
+                  <option value="Spend">Spend (Direct Expense)</option>
+                  <option value="Received">Received (Direct Income)</option>
+                  <option value="Yet to Receive">Yet to Receive (Pending from Customer)</option>
+                  <option value="Due Payment">Due Payment (Payable to Vendor)</option>
+                </select>
+              </div>
+              <div className="grid-2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+                <div className="form-group"><label>Date *</label><input type="date" className="form-input" value={formData.expense_date} onChange={(e) => setFormData({ ...formData, expense_date: e.target.value })} required /></div>
+                <div className="form-group"><label>Type *</label>
+                  <select className="form-select" value={formData.expense_type} onChange={(e) => setFormData({ ...formData, expense_type: e.target.value })}>
+                    <option>Vegetables</option><option>Gas</option><option>Labour</option><option>Transport</option><option>Groceries</option><option>Utensils</option><option>Vendor Payment</option><option>Customer Payment</option><option>Other</option>
+                  </select>
+                </div>
+              </div>
               <div className="form-group"><label>Amount (₹) *</label><input type="number" className="form-input" value={formData.amount} onChange={(e) => setFormData({ ...formData, amount: parseFloat(e.target.value) || 0 })} required /></div>
+              
+              {(formData.category === "Yet to Receive" || formData.category === "Due Payment") && (
+                <div className="grid-2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+                  <div className="form-group">
+                    <label>Due Date</label>
+                    <input type="date" className="form-input" value={formData.due_date} onChange={(e) => setFormData({ ...formData, due_date: e.target.value })} required />
+                  </div>
+                  {formData.category === "Yet to Receive" && (
+                    <div className="form-group">
+                      <label>Customer *</label>
+                      <select className="form-select" value={formData.customer_id} onChange={(e) => setFormData({ ...formData, customer_id: e.target.value })} required>
+                        <option value="">Select Customer</option>
+                        {customers.map(c => <option key={c.id} value={c.id}>{c.client_name}</option>)}
+                      </select>
+                    </div>
+                  )}
+                </div>
+              )}
+              
               <div className="form-group"><label>Notes</label><textarea className="form-input" rows={2} value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} /></div>
             </div>
-            <div className="modal-footer"><button type="button" className="btn btn-outline" onClick={() => setModalOpen(false)}>Cancel</button><button type="submit" className="btn btn-primary">Add Expense</button></div>
+            <div className="modal-footer"><button type="button" className="btn btn-outline" onClick={() => setModalOpen(false)}>Cancel</button><button type="submit" className="btn btn-primary">Save Transaction</button></div>
           </form>
         </Modal>
       </div>
@@ -1624,7 +2093,13 @@ const PaymentsPage = () => {
     <AdminLayout>
       <div data-testid="payments-page">
         <div className="page-header"><h1>Payments</h1><div style={{ display: "flex", gap: "0.75rem" }}><button className="btn btn-outline" onClick={handleExport}><Download size={18} /> Export</button><button className="btn btn-primary" onClick={() => setModalOpen(true)}><Plus size={18} /> Record Payment</button></div></div>
-        <div className="stat-card" style={{ marginBottom: "1.5rem" }}><div className="stat-label">Total Received</div><div className="stat-value" style={{ color: "#10B981" }}>₹{totalReceived.toLocaleString()}</div></div>
+        <div className="stats-grid" style={{ gridTemplateColumns: "1fr 1fr", marginBottom: "1.5rem" }}>
+          <div className="stat-card"><div className="stat-label">Total Received</div><div className="stat-value" style={{ color: "#10B981" }}>₹{totalReceived.toLocaleString()}</div></div>
+          <div className="stat-card"><div className="stat-label">Today's Collections</div><div className="stat-value" style={{ color: "#10B981" }}>₹{
+            payments.filter(p => p.payment_date?.split("T")[0] === format(new Date(), "yyyy-MM-dd"))
+                   .reduce((sum, p) => sum + p.amount, 0).toLocaleString()
+          }</div></div>
+        </div>
         <div className="data-card" style={{ marginBottom: "1.5rem" }}>
           <div className="card-header"><h3>Payment Tracking by Event</h3></div>
           {tracking.length > 0 ? (<table className="data-table"><thead><tr><th>Customer</th><th>Event Date</th><th>Type</th><th>Total</th><th>Received</th><th>Pending</th><th>Status</th></tr></thead><tbody>{tracking.map((t) => (<tr key={t.event_id}><td style={{ fontWeight: 500 }}>{t.customer_name}</td><td>{t.event_date}</td><td>{t.event_type}</td><td>₹{t.total_amount.toLocaleString()}</td><td style={{ color: "#10B981" }}>₹{t.advance_received.toLocaleString()}</td><td style={{ color: t.pending_amount > 0 ? "#DC2626" : "#10B981", fontWeight: 500 }}>₹{t.pending_amount.toLocaleString()}</td><td>{getStatusBadge(t.payment_status)}</td></tr>))}</tbody></table>) : (<div className="empty-state"><p>No events to track</p></div>)}
@@ -1718,6 +2193,7 @@ function App() {
           <Route path="/customer/dashboard" element={<ProtectedRoute allowedTypes={["customer"]}><CustomerDashboardPage /></ProtectedRoute>} />
           <Route path="/customer/past-events" element={<ProtectedRoute allowedTypes={["customer"]}><CustomerPastEventsPage /></ProtectedRoute>} />
           <Route path="/customer/book-slot" element={<ProtectedRoute allowedTypes={["customer"]}><CustomerBookSlotPage /></ProtectedRoute>} />
+          <Route path="/book-slot" element={<ProtectedRoute allowedTypes={["customer"]}><CustomerBookSlotPage /></ProtectedRoute>} />
           <Route path="/customer/my-bookings" element={<ProtectedRoute allowedTypes={["customer"]}><CustomerMyBookingsPage /></ProtectedRoute>} />
 
           {/* Admin/Staff Routes */}

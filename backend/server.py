@@ -34,56 +34,25 @@ JWT_EXPIRATION_HOURS = 24
 ADMIN_EMAIL = "admin1@gmail.com"
 ADMIN_PASSWORD = "admin123"
 
-# Object Storage Configuration
-STORAGE_URL = "https://integrations.emergentagent.com/objstore/api/v1/storage"
-EMERGENT_KEY = os.environ.get("EMERGENT_LLM_KEY")
-APP_NAME = "eventvenue-pro"
-storage_key = None
+# Application settings
+APP_NAME = "CaterPro"
 
 # Create the main app
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
 security = HTTPBearer()
 
-# Storage Functions
+# Storage Functions (Simplified for local use/database)
 def init_storage():
-    """Initialize storage and get storage key"""
-    global storage_key
-    if storage_key:
-        return storage_key
-    try:
-        resp = requests.post(f"{STORAGE_URL}/init", json={"emergent_key": EMERGENT_KEY}, timeout=30)
-        resp.raise_for_status()
-        storage_key = resp.json()["storage_key"]
-        return storage_key
-    except Exception as e:
-        logger.error(f"Storage init failed: {e}")
-        return None
+    return True
 
 def put_object(path: str, data: bytes, content_type: str) -> dict:
-    """Upload file to storage"""
-    key = init_storage()
-    if not key:
-        raise Exception("Storage not initialized")
-    resp = requests.put(
-        f"{STORAGE_URL}/objects/{path}",
-        headers={"X-Storage-Key": key, "Content-Type": content_type},
-        data=data, timeout=120
-    )
-    resp.raise_for_status()
-    return resp.json()
+    """Mock storage: In a real app, save to Disk or S3"""
+    return {"path": path, "size": len(data)}
 
 def get_object(path: str) -> tuple:
-    """Download file from storage"""
-    key = init_storage()
-    if not key:
-        raise Exception("Storage not initialized")
-    resp = requests.get(
-        f"{STORAGE_URL}/objects/{path}",
-        headers={"X-Storage-Key": key}, timeout=60
-    )
-    resp.raise_for_status()
-    return resp.content, resp.headers.get("Content-Type", "application/octet-stream")
+    """Mock storage: In a real app, read from Disk or S3"""
+    return b"", "application/octet-stream"
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -145,7 +114,7 @@ class SlotBookingCreate(BaseModel):
     event_type: str
     number_of_guests: int
     event_timing: str
-    venue_preference: str
+    venue_preference: Optional[str] = "Hall 1"
     special_requests: Optional[str] = ""
 
 class SlotBooking(BaseModel):
@@ -159,7 +128,7 @@ class SlotBooking(BaseModel):
     event_type: str
     number_of_guests: int
     event_timing: str
-    venue_preference: str
+    venue_preference: str = "Hall 1"
     special_requests: str = ""
     status: str = "Pending"  # Pending, Confirmed, Rejected
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
@@ -215,10 +184,12 @@ class EventCreate(BaseModel):
     event_type: str
     number_of_guests: int
     event_timing: str
-    venue_name: str
+    venue_name: Optional[str] = "Hall 1"
     per_plate_cost: float
     discount: float = 0
     quotation_status: str = "Pending"
+    advance_received: float = 0
+    due_date: Optional[str] = ""
     notes: Optional[str] = ""
     is_completed: bool = False
 
@@ -232,12 +203,17 @@ class Event(BaseModel):
     event_type: str
     number_of_guests: int
     event_timing: str
-    venue_name: str
+    venue_name: str = "Hall 1"
     per_plate_cost: float
     total_amount: float = 0
     discount: float = 0
     final_amount: float = 0
-    quotation_status: str = "Pending"
+    advance_received: float = 0
+    pending_amount: float = 0
+    payment_status: str = "Pending" # Paid, Partial, Pending
+    due_date: str = ""
+    quotation_status: str = "Pending" # Pending, Sent, Approved, Rejected
+    rejection_reason: str = ""
     notes: str = ""
     is_completed: bool = False
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
@@ -261,7 +237,11 @@ class Payment(BaseModel):
 class ExpenseCreate(BaseModel):
     expense_date: str
     expense_type: str
+    category: str = "Spend" # Spend, Received, Yet to Receive, Due Payment
     amount: float
+    due_date: Optional[str] = ""
+    is_settled: bool = False
+    customer_id: Optional[str] = ""
     notes: Optional[str] = ""
 
 class Expense(BaseModel):
@@ -269,7 +249,11 @@ class Expense(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     expense_date: str
     expense_type: str
+    category: str = "Spend" 
     amount: float
+    due_date: str = ""
+    is_settled: bool = False
+    customer_id: str = ""
     notes: str = ""
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
@@ -522,6 +506,16 @@ async def customer_login(credentials: CustomerUserLogin):
 
 # ============== CUSTOMER PORTAL ==============
 
+@api_router.get("/customer/events")
+async def get_customer_events(current_user: dict = Depends(get_current_user)):
+    if current_user.get('user_type') != 'customer':
+        raise HTTPException(status_code=403, detail="Customer access required")
+    
+    events = await db.events.find({"customer_email": current_user['username']}).to_list(1000)
+    for event in events:
+        event['_id'] = str(event['_id'])
+    return events
+
 @api_router.get("/customer/past-events")
 async def get_customer_past_events(current_user: dict = Depends(get_current_user)):
     if current_user.get('user_type') != 'customer':
@@ -630,6 +624,81 @@ async def update_booking_status(booking_id: str, status: str, current_user: dict
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Booking not found")
     return {"message": f"Booking status updated to {status}"}
+
+@api_router.post("/slot-bookings/{booking_id}/accept")
+async def accept_slot_booking(
+    booking_id: str, 
+    per_plate_cost: Optional[float] = 0,
+    discount: Optional[float] = 0,
+    current_user: dict = Depends(get_current_user)
+):
+    if current_user.get('user_type') == 'customer':
+        raise HTTPException(status_code=403, detail="Staff access required")
+    
+    booking = await db.slot_bookings.find_one({"id": booking_id})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    
+    # Check if customer already exists, if not create one
+    customer = await db.customers.find_one({"phone_number": booking['customer_phone']})
+    if not customer:
+        customer_obj = Customer(
+            client_name=booking['customer_name'],
+            phone_number=booking['customer_phone'],
+            address=booking.get('venue_preference', ''),
+            email=booking['customer_email'],
+            reference="Slot Booking Request"
+        )
+        await db.customers.insert_one(customer_obj.model_dump())
+        customer_id = customer_obj.id
+    else:
+        customer_id = customer['id']
+    
+    # Create Event
+    final_per_plate = per_plate_cost or 0
+    total_amount = final_per_plate * (booking.get('number_of_guests') or 0)
+    final_amount = total_amount - (discount or 0)
+    
+    event_obj = Event(
+        customer_id=customer_id,
+        customer_name=booking['customer_name'],
+        customer_email=booking['customer_email'],
+        event_date=booking['event_date'],
+        event_type=booking['event_type'],
+        number_of_guests=booking['number_of_guests'],
+        event_timing=booking['event_timing'],
+        venue_name=booking.get('venue_preference', 'TBD'),
+        per_plate_cost=final_per_plate,
+        total_amount=total_amount,
+        discount=discount or 0,
+        final_amount=final_amount,
+        quotation_status="Sent" if final_per_plate > 0 else "Pending"
+    )
+    await db.events.insert_one(event_obj.model_dump())
+    
+    # Update booking status
+    await db.slot_bookings.update_one({"id": booking_id}, {"$set": {"status": "Confirmed"}})
+    
+    return {"message": "Booking accepted and event created", "event_id": event_obj.id}
+
+@api_router.put("/events/{event_id}/quotation-status")
+async def update_quotation_status(
+    event_id: str, 
+    status: str, 
+    rejection_reason: Optional[str] = "",
+    current_user: dict = Depends(get_current_user)
+):
+    update_data = {"quotation_status": status}
+    if rejection_reason:
+        update_data["rejection_reason"] = rejection_reason
+    
+    result = await db.events.update_one(
+        {"id": event_id},
+        {"$set": update_data}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Event not found")
+    return {"message": f"Quotation status updated to {status}"}
 
 # ============== PHOTO UPLOAD ==============
 
@@ -950,7 +1019,16 @@ async def update_event(event_id: str, event: EventCreate, current_user: dict = D
     update_data['customer_email'] = customer.get('email', '')
     update_data['total_amount'] = total_amount
     update_data['final_amount'] = final_amount
+    update_data['pending_amount'] = final_amount - update_data.get('advance_received', 0)
     
+    # Update payment status
+    if update_data['pending_amount'] <= 0:
+        update_data['payment_status'] = "Paid"
+    elif update_data.get('advance_received', 0) > 0:
+        update_data['payment_status'] = "Partial"
+    else:
+        update_data['payment_status'] = "Pending"
+
     result = await db.events.update_one({"id": event_id}, {"$set": update_data})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Event not found")
@@ -1092,17 +1170,50 @@ async def delete_payment(payment_id: str, current_user: dict = Depends(get_curre
 
 # ============== EXPENSE ROUTES ==============
 
-@api_router.post("/expenses", response_model=Expense)
+@api_router.get("/expenses")
+async def get_expenses(current_user: dict = Depends(get_current_user)):
+    return await db.expenses.find({}, {"_id": 0}).sort("expense_date", -1).to_list(1000)
+
+@api_router.post("/expenses")
 async def create_expense(expense: ExpenseCreate, current_user: dict = Depends(get_current_user)):
     expense_obj = Expense(**expense.model_dump())
-    doc = expense_obj.model_dump()
-    await db.expenses.insert_one(doc)
+    await db.expenses.insert_one(expense_obj.model_dump())
     return expense_obj
 
-@api_router.get("/expenses", response_model=List[Expense])
-async def get_expenses(current_user: dict = Depends(get_current_user)):
-    expenses = await db.expenses.find({}, {"_id": 0}).to_list(1000)
-    return expenses
+@api_router.put("/expenses/{expense_id}/settle")
+async def settle_expense(expense_id: str, current_user: dict = Depends(get_current_user)):
+    expense = await db.expenses.find_one({"id": expense_id})
+    if not expense:
+        raise HTTPException(status_code=404, detail="Expense not found")
+    
+    # Convert "Yet to Receive" to "Received" or "Due Payment" to "Spend" when settled
+    new_category = expense['category']
+    if expense['category'] == "Yet to Receive":
+        new_category = "Received"
+    elif expense['category'] == "Due Payment":
+        new_category = "Spend"
+    
+    await db.expenses.update_one(
+        {"id": expense_id},
+        {"$set": {"is_settled": True, "category": new_category}}
+    )
+    return {"message": "Expense settled"}
+
+@api_router.get("/customer/alerts")
+async def get_customer_alerts(current_user: dict = Depends(get_current_user)):
+    if current_user.get('user_type') != 'customer':
+        return []
+    
+    # Find outstanding "Yet to Receive" expenses for this customer
+    alerts = await db.expenses.find({
+        "customer_id": current_user['user_id'],
+        "category": "Yet to Receive",
+        "is_settled": False
+    }, {"_id": 0}).to_list(100)
+    
+    return alerts
+
+# (Wait for other routes below)
 
 @api_router.get("/expenses/by-date/{date}")
 async def get_expenses_by_date(date: str, current_user: dict = Depends(get_current_user)):
@@ -1314,12 +1425,7 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def startup_event():
-    """Initialize storage on startup"""
-    try:
-        init_storage()
-        logger.info("Storage initialized successfully")
-    except Exception as e:
-        logger.error(f"Storage initialization failed: {e}")
+    logger.info("CaterPro API started")
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
