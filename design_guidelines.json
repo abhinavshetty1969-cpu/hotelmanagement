@@ -1,0 +1,73 @@
+{
+  "theme": "light",
+  "archetype": "1 (Organic & Earthy)",
+  "design_philosophy": "Warm, functional minimalism for hospitality operations. Balances dense data requirements with welcoming, organic aesthetics to reduce cognitive load for hotel staff.",
+  "colors": {
+    "background": "#F9F8F6",
+    "foreground": "#1A362D",
+    "card": "#FFFFFF",
+    "card_foreground": "#1A362D",
+    "primary": "#1A362D",
+    "primary_foreground": "#FFFFFF",
+    "secondary": "#E5E3DF",
+    "secondary_foreground": "#1A362D",
+    "accent": "#C85A3C",
+    "accent_foreground": "#FFFFFF",
+    "border": "#E5E3DF",
+    "muted": "#F3F1EC",
+    "muted_foreground": "#64748B",
+    "destructive": "#DC2626"
+  },
+  "typography": {
+    "font_family_heading": "Outfit, sans-serif",
+    "font_family_body": "Plus Jakarta Sans, sans-serif",
+    "h1": "text-4xl tracking-tight font-semibold",
+    "h2": "text-2xl tracking-tight font-medium",
+    "h3": "text-xl tracking-tight font-medium",
+    "h4": "text-lg font-medium",
+    "body": "text-sm text-muted-foreground",
+    "label": "text-xs font-semibold tracking-[0.05em] uppercase text-muted-foreground"
+  },
+  "layout": {
+    "spacing_scale": "Tailwind default (p-4, p-6, p-8)",
+    "container_padding": "p-6 md:p-8",
+    "dashboard_grid": "grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6",
+    "card_style": "bg-card border border-border rounded-xl shadow-sm overflow-hidden"
+  },
+  "components": {
+    "navigation": "Sidebar for desktop (w-64 border-r border-border bg-card), Bottom bar or Hamburger for mobile. Use Lucide icons.",
+    "tables": "Shadcn Table. Flat header with bg-muted, text-label. Rows have border-b border-border.",
+    "buttons": "Shadcn Button. rounded-lg. Primary uses bg-primary text-primary-foreground hover:bg-primary/90.",
+    "inputs": "Shadcn Input/Select. border-border bg-background focus:ring-2 focus:ring-primary/20",
+    "badges": "rounded-full px-2.5 py-0.5 text-xs font-medium. Status specific colors (e.g., bg-green-100 text-green-800 for 'Paid')."
+  },
+  "media": {
+    "images": {
+      "login_background": {
+        "url": "https://images.unsplash.com/photo-1742844551970-ce693b4f05ed?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA0MTJ8MHwxfHNlYXJjaHwzfHxsdXh1cnklMjBob3RlbCUyMHJlY2VwdGlvbnxlbnwwfHx8fDE3NzUxODg4MTN8MA&ixlib=rb-4.1.0&q=85",
+        "description": "Luxurious lobby background for the login screen."
+      },
+      "empty_state_events": {
+        "url": "https://images.pexels.com/photos/29641446/pexels-photo-29641446.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "Elegant outdoor wedding setup to use as a placeholder or empty state for Events."
+      },
+      "dashboard_hero": {
+        "url": "https://images.pexels.com/photos/32978233/pexels-photo-32978233.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "Modern hotel lobby reception desk for welcome banners or profile backgrounds."
+      }
+    }
+  },
+  "animations": {
+    "hover": "transition-all duration-200 ease-in-out",
+    "cards": "hover:-translate-y-0.5 hover:shadow-md"
+  },
+  "instructions_to_main_agent": [
+    "Ensure all fonts (Outfit, Plus Jakarta Sans) are imported via Google Fonts in index.html.",
+    "Update tailwind.config.js to include the custom colors.",
+    "Use Lucide-react for all icons, as it is standard with Shadcn.",
+    "Build a responsive sidebar layout for the dashboard.",
+    "Use Shadcn UI components for Tables, Cards, Inputs, and Dialogs (for reminders/alerts).",
+    "All interactive elements must have data-testid attributes.",
+    "Maintain strict adherence to the organic earthy color palette to keep the app feeling premium, not clinical."
+  ]
+}
