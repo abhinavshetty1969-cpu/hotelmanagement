@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, status
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, File, UploadFile, Query
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -14,7 +14,8 @@ import jwt
 import bcrypt
 from io import BytesIO
 import pandas as pd
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, Response
+import requests
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -33,10 +34,56 @@ JWT_EXPIRATION_HOURS = 24
 ADMIN_EMAIL = "admin1@gmail.com"
 ADMIN_PASSWORD = "admin123"
 
+# Object Storage Configuration
+STORAGE_URL = "https://integrations.emergentagent.com/objstore/api/v1/storage"
+EMERGENT_KEY = os.environ.get("EMERGENT_LLM_KEY")
+APP_NAME = "eventvenue-pro"
+storage_key = None
+
 # Create the main app
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
 security = HTTPBearer()
+
+# Storage Functions
+def init_storage():
+    """Initialize storage and get storage key"""
+    global storage_key
+    if storage_key:
+        return storage_key
+    try:
+        resp = requests.post(f"{STORAGE_URL}/init", json={"emergent_key": EMERGENT_KEY}, timeout=30)
+        resp.raise_for_status()
+        storage_key = resp.json()["storage_key"]
+        return storage_key
+    except Exception as e:
+        logger.error(f"Storage init failed: {e}")
+        return None
+
+def put_object(path: str, data: bytes, content_type: str) -> dict:
+    """Upload file to storage"""
+    key = init_storage()
+    if not key:
+        raise Exception("Storage not initialized")
+    resp = requests.put(
+        f"{STORAGE_URL}/objects/{path}",
+        headers={"X-Storage-Key": key, "Content-Type": content_type},
+        data=data, timeout=120
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+def get_object(path: str) -> tuple:
+    """Download file from storage"""
+    key = init_storage()
+    if not key:
+        raise Exception("Storage not initialized")
+    resp = requests.get(
+        f"{STORAGE_URL}/objects/{path}",
+        headers={"X-Storage-Key": key}, timeout=60
+    )
+    resp.raise_for_status()
+    return resp.content, resp.headers.get("Content-Type", "application/octet-stream")
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -584,7 +631,183 @@ async def update_booking_status(booking_id: str, status: str, current_user: dict
         raise HTTPException(status_code=404, detail="Booking not found")
     return {"message": f"Booking status updated to {status}"}
 
-# ============== EVENT PHOTOS (Admin/Staff) ==============
+# ============== PHOTO UPLOAD ==============
+
+ALLOWED_EXTENSIONS = {'jpg', 'jpeg', 'png', 'gif', 'webp'}
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+
+def get_file_extension(filename: str) -> str:
+    return filename.split(".")[-1].lower() if "." in filename else "jpg"
+
+@api_router.post("/upload/photo")
+async def upload_photo(
+    event_id: str,
+    caption: str = "",
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user)
+):
+    """Upload a photo for an event - accessible by both admin/staff and customers"""
+    # Verify event exists
+    event = await db.events.find_one({"id": event_id}, {"_id": 0})
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+    
+    # Check file extension
+    ext = get_file_extension(file.filename)
+    if ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(status_code=400, detail=f"File type not allowed. Allowed: {', '.join(ALLOWED_EXTENSIONS)}")
+    
+    # Read file
+    data = await file.read()
+    if len(data) > MAX_FILE_SIZE:
+        raise HTTPException(status_code=400, detail="File too large. Max size: 10MB")
+    
+    # Generate unique path
+    file_id = str(uuid.uuid4())
+    path = f"{APP_NAME}/events/{event_id}/{file_id}.{ext}"
+    
+    # Upload to storage
+    try:
+        result = put_object(path, data, file.content_type or f"image/{ext}")
+    except Exception as e:
+        logger.error(f"Upload failed: {e}")
+        raise HTTPException(status_code=500, detail="Failed to upload photo")
+    
+    # Get uploader info
+    uploader_name = ""
+    uploader_type = current_user.get('user_type', 'staff')
+    if uploader_type == 'customer':
+        customer = await db.customer_users.find_one({"id": current_user['user_id']}, {"_id": 0})
+        uploader_name = customer.get('name', '') if customer else ''
+    else:
+        user = await db.users.find_one({"id": current_user['user_id']}, {"_id": 0})
+        uploader_name = user.get('full_name', '') if user else ''
+    
+    # Save to database
+    photo_doc = {
+        "id": file_id,
+        "event_id": event_id,
+        "storage_path": result["path"],
+        "original_filename": file.filename,
+        "content_type": file.content_type,
+        "size": result.get("size", len(data)),
+        "caption": caption,
+        "uploaded_by": current_user['user_id'],
+        "uploader_name": uploader_name,
+        "uploader_type": uploader_type,
+        "is_deleted": False,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.event_photos.insert_one(photo_doc)
+    
+    return {
+        "id": file_id,
+        "event_id": event_id,
+        "caption": caption,
+        "uploader_name": uploader_name,
+        "created_at": photo_doc["created_at"]
+    }
+
+@api_router.get("/photos/{photo_id}")
+async def get_photo(photo_id: str, auth: str = Query(None)):
+    """Get a photo by ID - supports query param auth for img src"""
+    photo = await db.event_photos.find_one({"id": photo_id, "is_deleted": False}, {"_id": 0})
+    if not photo:
+        raise HTTPException(status_code=404, detail="Photo not found")
+    
+    try:
+        data, content_type = get_object(photo["storage_path"])
+        return Response(content=data, media_type=photo.get("content_type", content_type))
+    except Exception as e:
+        logger.error(f"Failed to get photo: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve photo")
+
+@api_router.get("/events/{event_id}/photos")
+async def get_event_photos(event_id: str, current_user: dict = Depends(get_current_user)):
+    """Get all photos for an event"""
+    photos = await db.event_photos.find(
+        {"event_id": event_id, "is_deleted": False},
+        {"_id": 0, "storage_path": 0}
+    ).to_list(100)
+    return photos
+
+@api_router.delete("/photos/{photo_id}")
+async def delete_photo(photo_id: str, current_user: dict = Depends(get_current_user)):
+    """Soft delete a photo - only uploader or admin can delete"""
+    photo = await db.event_photos.find_one({"id": photo_id}, {"_id": 0})
+    if not photo:
+        raise HTTPException(status_code=404, detail="Photo not found")
+    
+    # Check permission - admin can delete any, others can only delete their own
+    if current_user.get('role') != 'admin' and photo.get('uploaded_by') != current_user['user_id']:
+        raise HTTPException(status_code=403, detail="Not authorized to delete this photo")
+    
+    await db.event_photos.update_one({"id": photo_id}, {"$set": {"is_deleted": True}})
+    return {"message": "Photo deleted"}
+
+# Customer photo upload
+@api_router.post("/customer/upload-photo")
+async def customer_upload_photo(
+    event_id: str,
+    caption: str = "",
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user)
+):
+    """Customer uploads photo for their completed event"""
+    if current_user.get('user_type') != 'customer':
+        raise HTTPException(status_code=403, detail="Customer access required")
+    
+    # Verify event exists and belongs to customer (by email match)
+    event = await db.events.find_one({"id": event_id, "is_completed": True}, {"_id": 0})
+    if not event:
+        raise HTTPException(status_code=404, detail="Completed event not found")
+    
+    customer = await db.customer_users.find_one({"id": current_user['user_id']}, {"_id": 0})
+    if not customer or event.get('customer_email') != customer.get('email'):
+        raise HTTPException(status_code=403, detail="Not authorized to upload photos for this event")
+    
+    # Use the main upload function
+    ext = get_file_extension(file.filename)
+    if ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(status_code=400, detail=f"File type not allowed")
+    
+    data = await file.read()
+    if len(data) > MAX_FILE_SIZE:
+        raise HTTPException(status_code=400, detail="File too large. Max size: 10MB")
+    
+    file_id = str(uuid.uuid4())
+    path = f"{APP_NAME}/events/{event_id}/{file_id}.{ext}"
+    
+    try:
+        result = put_object(path, data, file.content_type or f"image/{ext}")
+    except Exception as e:
+        logger.error(f"Upload failed: {e}")
+        raise HTTPException(status_code=500, detail="Failed to upload photo")
+    
+    photo_doc = {
+        "id": file_id,
+        "event_id": event_id,
+        "storage_path": result["path"],
+        "original_filename": file.filename,
+        "content_type": file.content_type,
+        "size": result.get("size", len(data)),
+        "caption": caption,
+        "uploaded_by": current_user['user_id'],
+        "uploader_name": customer.get('name', ''),
+        "uploader_type": "customer",
+        "is_deleted": False,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.event_photos.insert_one(photo_doc)
+    
+    return {
+        "id": file_id,
+        "event_id": event_id,
+        "caption": caption,
+        "created_at": photo_doc["created_at"]
+    }
+
+# ============== EVENT PHOTOS (Legacy - keeping for compatibility) ==============
 
 @api_router.post("/event-photos")
 async def add_event_photo(photo: EventPhotoCreate, current_user: dict = Depends(get_current_user)):
@@ -747,6 +970,92 @@ async def delete_event(event_id: str, current_user: dict = Depends(get_current_u
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Event not found")
     return {"message": "Event deleted"}
+
+# ============== CALENDAR VIEW ==============
+
+@api_router.get("/calendar/events")
+async def get_calendar_events(
+    start_date: str = Query(None),
+    end_date: str = Query(None),
+    current_user: dict = Depends(get_current_user)
+):
+    """Get events for calendar view with optional date range filter"""
+    query = {}
+    
+    if start_date and end_date:
+        query["event_date"] = {"$gte": start_date, "$lte": end_date}
+    elif start_date:
+        query["event_date"] = {"$gte": start_date}
+    elif end_date:
+        query["event_date"] = {"$lte": end_date}
+    
+    events = await db.events.find(query, {"_id": 0}).to_list(1000)
+    
+    # Format for calendar
+    calendar_events = []
+    for event in events:
+        calendar_events.append({
+            "id": event["id"],
+            "title": f"{event.get('customer_name', 'Unknown')} - {event.get('event_type', 'Event')}",
+            "date": event["event_date"],
+            "event_type": event.get("event_type", ""),
+            "customer_name": event.get("customer_name", ""),
+            "venue_name": event.get("venue_name", ""),
+            "event_timing": event.get("event_timing", ""),
+            "number_of_guests": event.get("number_of_guests", 0),
+            "final_amount": event.get("final_amount", 0),
+            "quotation_status": event.get("quotation_status", "Pending"),
+            "is_completed": event.get("is_completed", False)
+        })
+    
+    return calendar_events
+
+@api_router.get("/calendar/stats")
+async def get_calendar_stats(
+    month: str = Query(None),  # Format: YYYY-MM
+    current_user: dict = Depends(get_current_user)
+):
+    """Get monthly stats for calendar"""
+    if month:
+        start_date = f"{month}-01"
+        # Get last day of month
+        year, m = map(int, month.split("-"))
+        if m == 12:
+            end_date = f"{year + 1}-01-01"
+        else:
+            end_date = f"{year}-{m + 1:02d}-01"
+        
+        events = await db.events.find({
+            "event_date": {"$gte": start_date, "$lt": end_date}
+        }, {"_id": 0}).to_list(1000)
+    else:
+        events = await db.events.find({}, {"_id": 0}).to_list(1000)
+    
+    # Calculate stats
+    total_events = len(events)
+    completed_events = sum(1 for e in events if e.get('is_completed'))
+    total_revenue = sum(e.get('final_amount', 0) for e in events)
+    
+    # Events by type
+    events_by_type = {}
+    for e in events:
+        event_type = e.get('event_type', 'Other')
+        events_by_type[event_type] = events_by_type.get(event_type, 0) + 1
+    
+    # Events by status
+    events_by_status = {"Approved": 0, "Pending": 0, "Sent": 0}
+    for e in events:
+        status = e.get('quotation_status', 'Pending')
+        events_by_status[status] = events_by_status.get(status, 0) + 1
+    
+    return {
+        "total_events": total_events,
+        "completed_events": completed_events,
+        "pending_events": total_events - completed_events,
+        "total_revenue": total_revenue,
+        "events_by_type": events_by_type,
+        "events_by_status": events_by_status
+    }
 
 # ============== PAYMENT ROUTES ==============
 
@@ -1002,6 +1311,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize storage on startup"""
+    try:
+        init_storage()
+        logger.info("Storage initialized successfully")
+    except Exception as e:
+        logger.error(f"Storage initialization failed: {e}")
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
