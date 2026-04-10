@@ -76,18 +76,22 @@ class AdminLogin(BaseModel):
     password: str
 
 class StaffCreate(BaseModel):
-    username: str
-    password: str
     full_name: str
     email: Optional[str] = ""
+    designation: str
+    date_of_joining: str
+    salary: float
 
 class User(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    username: str
     role: str
     full_name: str
     email: str = ""
+    designation: str = ""
+    date_of_joining: str = ""
+    salary: float = 0
+    last_salary_paid_date: Optional[str] = None
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 # Customer Models
@@ -130,7 +134,8 @@ class SlotBooking(BaseModel):
     event_timing: str
     venue_preference: str = "Hall 1"
     special_requests: str = ""
-    status: str = "Pending"  # Pending, Confirmed, Rejected
+    status: str = "Pending"  # Pending, Confirmed, Rejected, Negotiating
+    negotiation_message: str = ""
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 class ReviewCreate(BaseModel):
@@ -212,8 +217,11 @@ class Event(BaseModel):
     pending_amount: float = 0
     payment_status: str = "Pending" # Paid, Partial, Pending
     due_date: str = ""
-    quotation_status: str = "Pending" # Pending, Sent, Approved, Rejected
+    quotation_status: str = "Pending" # Pending, Sent, Approved, Rejected, Negotiating, Negotiated
     rejection_reason: str = ""
+    negotiation_message: str = ""
+    admin_negotiation_response: str = ""
+    negotiated_amount: float = 0
     notes: str = ""
     is_completed: bool = False
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
@@ -222,6 +230,8 @@ class PaymentCreate(BaseModel):
     event_id: str
     amount: float
     payment_mode: str
+    transaction_id: Optional[str] = ""
+    screenshot_url: Optional[str] = ""
     notes: Optional[str] = ""
 
 class Payment(BaseModel):
@@ -231,6 +241,8 @@ class Payment(BaseModel):
     customer_name: Optional[str] = ""
     amount: float
     payment_mode: str
+    transaction_id: str = ""
+    screenshot_url: str = ""
     payment_date: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     notes: str = ""
 
@@ -338,31 +350,10 @@ async def admin_login(credentials: AdminLogin):
         }
     raise HTTPException(status_code=401, detail="Invalid admin credentials")
 
-@api_router.post("/auth/staff-login")
-async def staff_login(credentials: UserLogin):
-    user = await db.users.find_one({"username": credentials.username, "role": "staff"})
-    if not user or not verify_password(credentials.password, user['password_hash']):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-    
-    token = create_token(user['id'], user['username'], user['role'], "staff")
-    return {
-        "token": token,
-        "user": {
-            "id": user['id'],
-            "username": user['username'],
-            "role": user['role'],
-            "full_name": user['full_name']
-        }
-    }
-
 @api_router.post("/auth/register", response_model=User)
 async def register(user: UserCreate):
-    existing = await db.users.find_one({"username": user.username})
-    if existing:
-        raise HTTPException(status_code=400, detail="Username already exists")
-    
+    # This remains for standard user creation if needed, but staff uses create_staff
     user_obj = User(
-        username=user.username,
         role=user.role,
         full_name=user.full_name,
         email=user.email or ""
@@ -371,23 +362,6 @@ async def register(user: UserCreate):
     doc['password_hash'] = hash_password(user.password)
     await db.users.insert_one(doc)
     return user_obj
-
-@api_router.post("/auth/login")
-async def login(credentials: UserLogin):
-    user = await db.users.find_one({"username": credentials.username})
-    if not user or not verify_password(credentials.password, user['password_hash']):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-    
-    token = create_token(user['id'], user['username'], user['role'], user['role'])
-    return {
-        "token": token,
-        "user": {
-            "id": user['id'],
-            "username": user['username'],
-            "role": user['role'],
-            "full_name": user['full_name']
-        }
-    }
 
 @api_router.get("/auth/me")
 async def get_me(current_user: dict = Depends(get_current_user)):
@@ -419,18 +393,18 @@ async def create_staff(staff: StaffCreate, current_user: dict = Depends(get_curr
     if current_user['role'] != 'admin':
         raise HTTPException(status_code=403, detail="Admin access required")
     
-    existing = await db.users.find_one({"username": staff.username})
-    if existing:
-        raise HTTPException(status_code=400, detail="Username already exists")
+    # We no longer use usernames for staff
     
     user_obj = User(
-        username=staff.username,
         role="staff",
         full_name=staff.full_name,
-        email=staff.email or ""
+        email=staff.email or "",
+        designation=staff.designation,
+        date_of_joining=staff.date_of_joining,
+        salary=staff.salary,
+        last_salary_paid_date=staff.date_of_joining
     )
     doc = user_obj.model_dump()
-    doc['password_hash'] = hash_password(staff.password)
     await db.users.insert_one(doc)
     return user_obj
 
@@ -449,6 +423,32 @@ async def delete_staff(staff_id: str, current_user: dict = Depends(get_current_u
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Staff not found")
     return {"message": "Staff deleted"}
+
+@api_router.post("/staff/{staff_id}/pay-salary")
+async def pay_staff_salary(staff_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    staff = await db.users.find_one({"id": staff_id, "role": "staff"})
+    if not staff:
+        raise HTTPException(status_code=404, detail="Staff not found")
+    
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    
+    # Update last paid date
+    await db.users.update_one({"id": staff_id}, {"$set": {"last_salary_paid_date": today}})
+    
+    # Create Expense
+    expense_obj = Expense(
+        expense_date=today,
+        expense_type="Staff Salary",
+        category="Spend",
+        amount=staff.get('salary', 0),
+        notes=f"Monthly salary for {staff['full_name']} ({staff.get('designation', 'Staff')})"
+    )
+    await db.expenses.insert_one(expense_obj.model_dump())
+    
+    return {"message": "Salary paid and recorded in expenses"}
 
 @api_router.get("/users", response_model=List[User])
 async def get_users(current_user: dict = Depends(get_current_user)):
@@ -625,6 +625,23 @@ async def update_booking_status(booking_id: str, status: str, current_user: dict
         raise HTTPException(status_code=404, detail="Booking not found")
     return {"message": f"Booking status updated to {status}"}
 
+@api_router.put("/slot-bookings/{booking_id}/update-customer")
+async def update_booking_customer(booking_id: str, data: dict, current_user: dict = Depends(get_current_user)):
+    if current_user.get('user_type') == 'customer':
+        raise HTTPException(status_code=403, detail="Staff access required")
+    
+    result = await db.slot_bookings.update_one(
+        {"id": booking_id},
+        {"$set": {
+            "customer_name": data.get("customer_name"),
+            "customer_email": data.get("customer_email"),
+            "customer_phone": data.get("customer_phone")
+        }}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    return {"message": "Customer details updated"}
+
 @api_router.post("/slot-bookings/{booking_id}/accept")
 async def accept_slot_booking(
     booking_id: str, 
@@ -699,6 +716,41 @@ async def update_quotation_status(
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Event not found")
     return {"message": f"Quotation status updated to {status}"}
+
+@api_router.put("/events/{event_id}/negotiate")
+async def negotiate_quotation(
+    event_id: str, 
+    message: str,
+    current_user: dict = Depends(get_current_user)
+):
+    result = await db.events.update_one(
+        {"id": event_id},
+        {"$set": {"quotation_status": "Negotiating", "negotiation_message": message}}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Event not found")
+    return {"message": "Negotiation request sent"}
+
+@api_router.put("/events/{event_id}/respond-negotiation")
+async def respond_negotiation(
+    event_id: str,
+    admin_response: str,
+    final_negotiated_amount: float,
+    current_user: dict = Depends(get_current_user)
+):
+    if current_user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    update_data = {
+        "quotation_status": "Negotiated",
+        "admin_negotiation_response": admin_response,
+        "final_amount": final_negotiated_amount
+    }
+    
+    result = await db.events.update_one({"id": event_id}, {"$set": update_data})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Event not found")
+    return {"message": "Negotiation response sent to customer"}
 
 # ============== PHOTO UPLOAD ==============
 
@@ -1149,6 +1201,26 @@ async def create_payment(payment: PaymentCreate, current_user: dict = Depends(ge
     )
     doc = payment_obj.model_dump()
     await db.payments.insert_one(doc)
+    
+    # Update event advance_received and status
+    new_advance = event.get('advance_received', 0) + payment.amount
+    new_pending = event.get('final_amount', 0) - new_advance
+    
+    new_status = "Pending"
+    if new_pending <= 0:
+        new_status = "Paid"
+    elif new_advance > 0:
+        new_status = "Partial"
+        
+    await db.events.update_one(
+        {"id": payment.event_id},
+        {"$set": {
+            "advance_received": new_advance,
+            "pending_amount": max(0, new_pending),
+            "payment_status": new_status
+        }}
+    )
+    
     return payment_obj
 
 @api_router.get("/payments", response_model=List[Payment])
@@ -1295,6 +1367,23 @@ async def get_dashboard(current_user: dict = Depends(get_current_user)):
     # Slot booking requests
     pending_bookings = await db.slot_bookings.find({"status": "Pending"}, {"_id": 0}).to_list(100)
     
+    # Negotiation requests
+    negotiation_requests = await db.events.find({"quotation_status": "Negotiating"}, {"_id": 0}).to_list(100)
+    
+    # Salary alerts
+    all_staff = await db.users.find({"role": "staff"}, {"_id": 0}).to_list(1000)
+    salary_due_count = 0
+    today_dt = datetime.now(timezone.utc)
+    for s in all_staff:
+        last_paid = s.get('last_salary_paid_date') or s.get('date_of_joining')
+        if last_paid:
+            try:
+                last_paid_dt = datetime.strptime(last_paid, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                if (today_dt - last_paid_dt).days >= 30:
+                    salary_due_count += 1
+            except:
+                pass
+
     total_customers = await db.customers.count_documents({})
     total_events = await db.events.count_documents({})
     total_leads = await db.leads.count_documents({})
@@ -1313,6 +1402,8 @@ async def get_dashboard(current_user: dict = Depends(get_current_user)):
         "follow_up_reminders": follow_ups,
         "pending_bookings": pending_bookings,
         "pending_bookings_count": len(pending_bookings),
+        "negotiation_count": len(negotiation_requests),
+        "salary_due_count": salary_due_count,
         "stats": {
             "total_customers": total_customers,
             "total_events": total_events,

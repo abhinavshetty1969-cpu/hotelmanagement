@@ -63,17 +63,6 @@ const AuthProvider = ({ children }) => {
     return res.data;
   };
 
-  const loginStaff = async (username, password) => {
-    const res = await axios.post(`${API}/auth/staff-login`, { username, password });
-    localStorage.setItem("token", res.data.token);
-    localStorage.setItem("userType", "staff");
-    setToken(res.data.token);
-    setUser(res.data.user);
-    setUserType("staff");
-    axios.defaults.headers.common["Authorization"] = `Bearer ${res.data.token}`;
-    return res.data;
-  };
-
   const loginCustomer = async (email, password) => {
     const res = await axios.post(`${API}/customer/login`, { email, password });
     localStorage.setItem("token", res.data.token);
@@ -106,7 +95,7 @@ const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, userType, loginAdmin, loginStaff, loginCustomer, registerCustomer, logout, loading }}>
+    <AuthContext.Provider value={{ user, token, userType, loginAdmin, loginCustomer, registerCustomer, logout, loading }}>
       {children}
     </AuthContext.Provider>
   );
@@ -234,7 +223,7 @@ const LandingPage = () => {
               <Users size={20} /> Customer Portal
             </button>
             <button className="btn btn-outline btn-lg" onClick={() => navigate("/admin/login")} data-testid="admin-login-btn">
-              <UserCog size={20} /> Admin / Staff Login
+              <UserCog size={20} /> Admin Login
             </button>
           </div>
         </div>
@@ -328,23 +317,17 @@ const CustomerLoginPage = () => {
 
 // ============== ADMIN/STAFF LOGIN PAGE ==============
 const AdminLoginPage = () => {
-  const [loginType, setLoginType] = useState("admin"); // admin or staff
   const [email, setEmail] = useState("");
-  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-  const { loginAdmin, loginStaff } = useAuth();
+  const { loginAdmin } = useAuth();
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
     try {
-      if (loginType === "admin") {
-        await loginAdmin(email, password);
-      } else {
-        await loginStaff(username, password);
-      }
+      await loginAdmin(email, password);
       navigate("/admin/dashboard");
     } catch (err) {
       setError(err.response?.data?.detail || "Invalid credentials");
@@ -352,11 +335,12 @@ const AdminLoginPage = () => {
   };
 
   return (
-    <div className="login-container" data-testid="admin-login-page">
-      <div className="login-image">
-        <div className="login-image-content">
-          <h1>CaterPro</h1>
-          <p>Manage your hotel bookings and events with ease</p>
+    <div className="login-page">
+      <div className="login-hero">
+        <div className="login-overlay"></div>
+        <div className="login-content">
+          <h1>Admin Portal</h1>
+          <p>Secure access for CaterPro Management</p>
         </div>
       </div>
       <div className="login-form-container">
@@ -366,37 +350,21 @@ const AdminLoginPage = () => {
               ← Back to Home
             </button>
           </div>
-          <h2>Admin / Staff Login</h2>
-          <p>Sign in to manage operations</p>
-
-          <div className="login-type-toggle">
-            <button type="button" className={`toggle-btn ${loginType === "admin" ? "active" : ""}`} onClick={() => setLoginType("admin")} data-testid="admin-type-btn">
-              Admin
-            </button>
-            <button type="button" className={`toggle-btn ${loginType === "staff" ? "active" : ""}`} onClick={() => setLoginType("staff")} data-testid="staff-type-btn">
-              Staff
-            </button>
-          </div>
+          <h2>Admin Login</h2>
+          <p>Enter your administrator credentials</p>
           
           {error && <div className="error-alert"><AlertCircle size={18} /><span>{error}</span></div>}
           
-          {loginType === "admin" ? (
-            <div className="form-group">
-              <label>Admin Email</label>
-              <input type="email" className="form-input" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="admin1@gmail.com" required data-testid="admin-email-input" />
-            </div>
-          ) : (
-            <div className="form-group">
-              <label>Username</label>
-              <input type="text" className="form-input" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Enter username" required data-testid="staff-username-input" />
-            </div>
-          )}
+          <div className="form-group">
+            <label>Email</label>
+            <input type="email" className="form-input" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="admin@example.com" required />
+          </div>
           <div className="form-group">
             <label>Password</label>
-            <input type="password" className="form-input" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter password" required data-testid="admin-password-input" />
+            <input type="password" className="form-input" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" required />
           </div>
-          <button type="submit" className="btn btn-primary btn-full" data-testid="admin-login-submit">
-            Sign In as {loginType === "admin" ? "Admin" : "Staff"}
+          <button type="submit" className="btn btn-primary btn-full">
+            Sign In as Admin
           </button>
         </form>
       </div>
@@ -413,11 +381,9 @@ const AdminSidebar = ({ isOpen, setIsOpen }) => {
   const navItems = [
     { icon: LayoutDashboard, label: "Dashboard", path: "/admin/dashboard" },
     { icon: Calendar, label: "Bookings", path: "/admin/bookings" },
-    { icon: Users, label: "Customers", path: "/admin/customers" },
-    { icon: Receipt, label: "Expenses", path: "/admin/expenses" },
+    { icon: Users, label: "Customers & Requests", path: "/admin/customer-requests" },
     { icon: DollarSign, label: "Payments", path: "/admin/payments" },
-    { icon: TrendingUp, label: "Leads", path: "/admin/leads" },
-    { icon: CalendarPlus, label: "Slot Requests", path: "/admin/slot-requests" },
+    { icon: Receipt, label: "Expenses", path: "/admin/expenses" },
   ];
 
   // Add staff management for admin only
@@ -665,14 +631,19 @@ const PendingQuotationsSection = () => {
   const [loading, setLoading] = useState(true);
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [negotiateModalOpen, setNegotiateModalOpen] = useState(false);
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
-  const [rejectionReason, setRejectionReason] = useState("");
+  const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  const [paymentDetailsModalOpen, setPaymentDetailsModalOpen] = useState(false);
+  const [rejectionReason, setRejectionReason] = useState("Prices are more");
+  const [negotiateMessage, setNegotiateMessage] = useState("");
+  const [paymentData, setPaymentData] = useState({ mode: "UPI", amount: 0, transactionId: "", notes: "" });
   const { user } = useAuth();
   
   const fetchEvents = useCallback(async () => {
     try {
       const res = await axios.get(`${API}/customer/events`);
-      setEvents(res.data.filter(e => e.quotation_status === "Sent"));
+      setEvents(res.data.filter(e => e.quotation_status === "Sent" || e.quotation_status === "Negotiated"));
     } catch (err) {
       console.error("Failed to fetch events", err);
     } finally {
@@ -684,15 +655,40 @@ const PendingQuotationsSection = () => {
     if (user) fetchEvents();
   }, [user, fetchEvents]);
 
-  const handleAction = async (status, reason = "") => {
+  const handleAction = async (status, reason = "", msg = "") => {
     try {
-      await axios.put(`${API}/events/${selectedEvent.id}/quotation-status?status=${status}&rejection_reason=${reason}`);
+      if (status === "Negotiating") {
+        await axios.put(`${API}/events/${selectedEvent.id}/negotiate?message=${msg}`);
+      } else {
+        await axios.put(`${API}/events/${selectedEvent.id}/quotation-status?status=${status}&rejection_reason=${reason}`);
+      }
       toast.success(`Quotation ${status}`);
       setModalOpen(false);
       setRejectModalOpen(false);
+      setNegotiateModalOpen(false);
       fetchEvents();
     } catch (err) {
       toast.error("Failed to update status");
+    }
+  };
+
+  const handlePaymentSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      await axios.post(`${API}/payments`, {
+        event_id: selectedEvent.id,
+        amount: paymentData.amount,
+        payment_mode: paymentData.mode,
+        transaction_id: paymentData.transactionId,
+        notes: paymentData.notes
+      });
+      toast.success("Payment recorded successfully!");
+      setPaymentDetailsModalOpen(false);
+      setPaymentModalOpen(false);
+      setModalOpen(false);
+      fetchEvents();
+    } catch (err) {
+      toast.error("Failed to record payment");
     }
   };
 
@@ -712,7 +708,9 @@ const PendingQuotationsSection = () => {
                 <h4 style={{ margin: 0, fontSize: "1.1rem" }}>{event.event_type}</h4>
                 <p style={{ margin: "0.25rem 0", color: "#64748B", fontSize: "0.875rem" }}>{event.event_date} @ {event.venue_name}</p>
               </div>
-              <span className="badge badge-sent">Quotation Sent</span>
+              <span className={`badge ${event.quotation_status === "Sent" ? "badge-sent" : "badge-approved"}`}>
+                {event.quotation_status === "Sent" ? "Quotation Sent" : "Admin Responded (Negotiated)"}
+              </span>
             </div>
             <div style={{ display: "flex", gap: "0.75rem" }}>
               <button className="btn btn-primary btn-sm" onClick={() => { setSelectedEvent(event); setModalOpen(true); }}>
@@ -725,13 +723,107 @@ const PendingQuotationsSection = () => {
 
       <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title="Review Quotation">
         <div className="modal-body" style={{ maxHeight: "60vh", overflowY: "auto", background: "#F1F5F9", padding: "20px" }}>
-          <QuotationTemplate event={selectedEvent} customer={{ client_name: user.name, phone_number: user.username, email: user.email, address: "" }} />
+          <QuotationTemplate event={selectedEvent} customer={{ client_name: user.name, phone_number: user.phone || user.username, email: user.email, address: "" }} />
         </div>
         <div className="modal-footer">
           <button type="button" className="btn btn-outline" onClick={() => setModalOpen(false)}>Close</button>
+          
+          {selectedEvent?.quotation_status === "Sent" && (
+            <button type="button" className="btn btn-outline" style={{ color: "#D97706" }} onClick={() => setNegotiateModalOpen(true)}>Negotiate</button>
+          )}
+          
           <button type="button" className="btn btn-outline" style={{ color: "#DC2626" }} onClick={() => setRejectModalOpen(true)}>Reject</button>
-          <button type="button" className="btn btn-primary" onClick={() => handleAction("Approved")}>Approve Quotation</button>
+          <button type="button" className="btn btn-primary" onClick={() => { setPaymentModalOpen(true); setPaymentData({ ...paymentData, amount: selectedEvent.final_amount }); }}>Approve & Pay</button>
         </div>
+      </Modal>
+
+      <Modal isOpen={negotiateModalOpen} onClose={() => setNegotiateModalOpen(false)} title="Negotiate Quotation">
+        <div className="modal-body">
+          <p style={{ marginBottom: "1rem" }}>Tell us what prices or changes you are looking for:</p>
+          <div className="form-group">
+            <label>Message to Admin *</label>
+            <textarea 
+              className="form-input" 
+              rows={4} 
+              value={negotiateMessage} 
+              onChange={(e) => setNegotiateMessage(e.target.value)}
+              placeholder="e.g., Can we get a discount of ₹5,000?"
+              required
+            />
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button type="button" className="btn btn-outline" onClick={() => setNegotiateModalOpen(false)}>Cancel</button>
+          <button type="button" className="btn btn-primary" style={{ background: "#D97706" }} onClick={() => handleAction("Negotiating", "", negotiateMessage)}>Send Request</button>
+        </div>
+      </Modal>
+
+      <Modal isOpen={paymentModalOpen} onClose={() => setPaymentModalOpen(false)} title="Select Payment Mode">
+        <div className="modal-body">
+          <p style={{ marginBottom: "1.5rem" }}>Choose your preferred payment method to proceed:</p>
+          <div className="grid-2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+            <div className="action-card" onClick={() => { setPaymentData({ ...paymentData, mode: "UPI" }); setPaymentDetailsModalOpen(true); }}>
+              <div className="action-icon" style={{ background: "#1A362D" }}><DollarSign size={24} /></div>
+              <h4 style={{ textAlign: "center", margin: "0.5rem 0" }}>UPI / Online</h4>
+            </div>
+            <div className="action-card" onClick={() => { setPaymentData({ ...paymentData, mode: "Cash" }); setPaymentDetailsModalOpen(true); }}>
+              <div className="action-icon" style={{ background: "#C85A3C" }}><Receipt size={24} /></div>
+              <h4 style={{ textAlign: "center", margin: "0.5rem 0" }}>Cash</h4>
+            </div>
+            <div className="action-card" onClick={() => { setPaymentData({ ...paymentData, mode: "Cheque" }); setPaymentDetailsModalOpen(true); }}>
+              <div className="action-icon" style={{ background: "#64748B" }}><CheckCircle size={24} /></div>
+              <h4 style={{ textAlign: "center", margin: "0.5rem 0" }}>Cheque</h4>
+            </div>
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button type="button" className="btn btn-outline" onClick={() => setPaymentModalOpen(false)}>Back</button>
+        </div>
+      </Modal>
+
+      <Modal isOpen={paymentDetailsModalOpen} onClose={() => setPaymentDetailsModalOpen(false)} title={`Confirm ${paymentData.mode} Payment`}>
+        <form onSubmit={handlePaymentSubmit}>
+          <div className="modal-body" style={{ maxHeight: "70vh", overflowY: "auto" }}>
+            {paymentData.mode === "UPI" && (
+              <div style={{ textAlign: "center", marginBottom: "1.5rem", padding: "1rem", background: "#F8FAFC", borderRadius: "8px" }}>
+                <p style={{ fontWeight: 600, marginBottom: "1rem" }}>Scan QR to Pay</p>
+                <img src="/assets/admin_upi_qr.png" alt="UPI QR Code" style={{ width: "200px", height: "200px", margin: "0 auto", display: "block", borderRadius: "8px", boxShadow: "0 4px 6px -1px rgba(0,0,0,0.1)" }} />
+                <p style={{ fontSize: "0.875rem", color: "#64748B", marginTop: "1rem" }}>Admin UPI ID: caterpro@okaxis</p>
+              </div>
+            )}
+            
+            <div className="form-group">
+              <label>Amount Paid (₹) *</label>
+              <input type="number" className="form-input" value={paymentData.amount} onChange={(e) => setPaymentData({ ...paymentData, amount: parseFloat(e.target.value) || 0 })} required />
+            </div>
+            
+            {paymentData.mode === "UPI" && (
+              <div className="form-group">
+                <label>Transaction ID / UTR *</label>
+                <input className="form-input" value={paymentData.transactionId} onChange={(e) => setPaymentData({ ...paymentData, transactionId: e.target.value })} placeholder="Enter 12-digit UPI Transaction ID" required />
+              </div>
+            )}
+            
+            <div className="form-group">
+              <label>Notes / Remarks</label>
+              <textarea className="form-input" rows={2} value={paymentData.notes} onChange={(e) => setPaymentData({ ...paymentData, notes: e.target.value })} placeholder="Any additional info..." />
+            </div>
+
+            {paymentData.mode === "UPI" && (
+              <div className="form-group">
+                <label>Share Screenshot (Placeholder)</label>
+                <div style={{ border: "2px dashed #E2E8F0", padding: "1rem", borderRadius: "8px", textAlign: "center", background: "#F8FAFC" }}>
+                  <Image size={24} style={{ color: "#94A3B8", marginBottom: "0.5rem" }} />
+                  <p style={{ fontSize: "0.75rem", color: "#64748B" }}>Upload will be enabled soon</p>
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="modal-footer">
+            <button type="button" className="btn btn-outline" onClick={() => setPaymentDetailsModalOpen(false)}>Back</button>
+            <button type="submit" className="btn btn-primary">Confirm & Submit</button>
+          </div>
+        </form>
       </Modal>
 
       <Modal isOpen={rejectModalOpen} onClose={() => setRejectModalOpen(false)} title="Reject Quotation">
@@ -1094,8 +1186,10 @@ const AdminDashboardPage = () => {
             <div className="reminder-alert-content">
               <h4>Attention Needed</h4>
               <p>
+                {dashboard?.negotiation_count > 0 && `${dashboard.negotiation_count} pending negotiation requests. `}
                 {dashboard?.pending_bookings_count > 0 && `${dashboard.pending_bookings_count} pending slot requests. `}
-                {dashboard?.follow_up_reminders?.length > 0 && `${dashboard.follow_up_reminders.length} follow-ups due.`}
+                {dashboard?.follow_up_reminders?.length > 0 && `${dashboard.follow_up_reminders.length} follow-ups due. `}
+                {dashboard?.salary_due_count > 0 && `${dashboard.salary_due_count} staff salary payments due.`}
               </p>
             </div>
           </div>
@@ -1178,7 +1272,13 @@ const StaffManagementPage = () => {
   const [staff, setStaff] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
-  const [formData, setFormData] = useState({ username: "", password: "", full_name: "", email: "" });
+  const [formData, setFormData] = useState({ 
+    full_name: "", 
+    email: "",
+    designation: "",
+    date_of_joining: "",
+    salary: 0
+  });
 
   const fetchStaff = useCallback(async () => {
     try {
@@ -1197,12 +1297,23 @@ const StaffManagementPage = () => {
     e.preventDefault();
     try {
       await axios.post(`${API}/staff`, formData);
-      toast.success("Staff member added!");
+      toast.success("Staff added successfully");
       fetchStaff();
       setModalOpen(false);
-      setFormData({ username: "", password: "", full_name: "", email: "" });
-    } catch (err) {
-      toast.error(err.response?.data?.detail || "Failed to add staff");
+      setFormData({ full_name: "", email: "", designation: "", date_of_joining: "", salary: 0 });
+    } catch {
+      toast.error("Failed to add staff");
+    }
+  };
+
+  const paySalary = async (staffId) => {
+    if (!window.confirm("Confirm salary payment? This will update the payment date and add a 'Staff Salary' entry to expenses.")) return;
+    try {
+      await axios.post(`${API}/staff/${staffId}/pay-salary`);
+      toast.success("Salary paid and recorded in expenses");
+      fetchStaff();
+    } catch {
+      toast.error("Failed to process salary payment");
     }
   };
 
@@ -1241,9 +1352,10 @@ const StaffManagementPage = () => {
               <thead>
                 <tr>
                   <th>Name</th>
-                  <th>Username</th>
-                  <th>Email</th>
-                  <th>Created</th>
+                  <th>Designation</th>
+                  <th>Salary (₹)</th>
+                  <th>Joining Date</th>
+                  <th>Last Paid</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -1251,13 +1363,19 @@ const StaffManagementPage = () => {
                 {staff.map((s) => (
                   <tr key={s.id}>
                     <td style={{ fontWeight: 500 }}>{s.full_name}</td>
-                    <td>{s.username}</td>
-                    <td>{s.email || "-"}</td>
-                    <td>{s.created_at?.split("T")[0]}</td>
+                    <td>{s.designation || "Staff"}</td>
+                    <td>₹{s.salary?.toLocaleString() || "0"}</td>
+                    <td>{s.date_of_joining || "-"}</td>
+                    <td>{s.last_salary_paid_date || "Never"}</td>
                     <td>
-                      <button className="action-btn delete" onClick={() => handleDelete(s.id)} data-testid={`delete-staff-${s.id}`}>
-                        <Trash2 size={14} />
-                      </button>
+                      <div className="action-buttons">
+                        <button className="action-btn" title="Pay Salary" style={{ background: "#F1F5F9", color: "#1A362D", border: "1px solid #E2E8F0" }} onClick={() => paySalary(s.id)}>
+                          <DollarSign size={14} /> Pay
+                        </button>
+                        <button className="action-btn delete" onClick={() => handleDelete(s.id)} data-testid={`delete-staff-${s.id}`}>
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -1269,21 +1387,29 @@ const StaffManagementPage = () => {
         <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title="Add Staff Member">
           <form onSubmit={handleSubmit}>
             <div className="modal-body">
-              <div className="form-group">
-                <label>Full Name *</label>
-                <input className="form-input" value={formData.full_name} onChange={(e) => setFormData({ ...formData, full_name: e.target.value })} required data-testid="staff-name-input" />
+              <div className="grid-2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+                <div className="form-group">
+                  <label>Full Name *</label>
+                  <input className="form-input" value={formData.full_name} onChange={(e) => setFormData({ ...formData, full_name: e.target.value })} required />
+                </div>
+                <div className="form-group">
+                  <label>Designation *</label>
+                  <input className="form-input" value={formData.designation} onChange={(e) => setFormData({ ...formData, designation: e.target.value })} placeholder="e.g. Head Cook, Manager" required />
+                </div>
               </div>
-              <div className="form-group">
-                <label>Username *</label>
-                <input className="form-input" value={formData.username} onChange={(e) => setFormData({ ...formData, username: e.target.value })} required data-testid="staff-username-input" />
-              </div>
-              <div className="form-group">
-                <label>Password *</label>
-                <input type="password" className="form-input" value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} required data-testid="staff-password-input" />
+              <div className="grid-2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+                <div className="form-group">
+                  <label>Monthly Salary (₹) *</label>
+                  <input type="number" className="form-input" value={formData.salary} onChange={(e) => setFormData({ ...formData, salary: parseFloat(e.target.value) || 0 })} required />
+                </div>
+                <div className="form-group">
+                  <label>Date of Joining *</label>
+                  <input type="date" className="form-input" value={formData.date_of_joining} onChange={(e) => setFormData({ ...formData, date_of_joining: e.target.value })} required />
+                </div>
               </div>
               <div className="form-group">
                 <label>Email</label>
-                <input type="email" className="form-input" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} data-testid="staff-email-input" />
+                <input type="email" className="form-input" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} />
               </div>
             </div>
             <div className="modal-footer">
@@ -1302,8 +1428,10 @@ const SlotRequestsPage = () => {
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
+  const [editModalOpen, setEditModalOpen] = useState(false);
   const [selectedBooking, setSelectedBooking] = useState(null);
   const [formData, setFormData] = useState({ per_plate_cost: 0, discount: 0 });
+  const [editFormData, setEditFormData] = useState({ customer_name: "", customer_email: "", customer_phone: "" });
 
   const fetchBookings = useCallback(async () => {
     try {
@@ -1332,6 +1460,28 @@ const SlotRequestsPage = () => {
     setSelectedBooking(booking);
     setFormData({ per_plate_cost: 0, discount: 0 });
     setModalOpen(true);
+  };
+
+  const openEditModal = (booking) => {
+    setSelectedBooking(booking);
+    setEditFormData({ 
+      customer_name: booking.customer_name, 
+      customer_email: booking.customer_email, 
+      customer_phone: booking.customer_phone 
+    });
+    setEditModalOpen(true);
+  };
+
+  const handleUpdateCustomer = async (e) => {
+    e.preventDefault();
+    try {
+      await axios.put(`${API}/slot-bookings/${selectedBooking.id}/update-customer`, editFormData);
+      toast.success("Customer details updated");
+      setEditModalOpen(false);
+      fetchBookings();
+    } catch {
+      toast.error("Failed to update details");
+    }
   };
 
   const handleMakeQuotation = async (e) => {
@@ -1397,16 +1547,21 @@ const SlotRequestsPage = () => {
                     <td>{b.venue_preference}</td>
                     <td>{getStatusBadge(b.status)}</td>
                     <td>
-                      {b.status === "Pending" && (
-                        <div className="action-buttons">
-                          <button className="action-btn edit" onClick={() => openQuoteModal(b)} title="Make Quotation">
-                            <Edit2 size={14} /> Quote
-                          </button>
-                          <button className="action-btn delete" onClick={() => updateStatus(b.id, "Rejected")} title="Reject">
-                            <XCircle size={14} /> Reject
-                          </button>
-                        </div>
-                      )}
+                      <div className="action-buttons">
+                        <button className="action-btn edit" onClick={() => openEditModal(b)} title="Edit Customer Details">
+                          <Edit2 size={14} /> Edit Info
+                        </button>
+                        {b.status === "Pending" && (
+                          <>
+                            <button className="action-btn" style={{ background: "#10B981", color: "white" }} onClick={() => openQuoteModal(b)} title="Make Quotation">
+                              <Check size={14} /> Quote
+                            </button>
+                            <button className="action-btn delete" onClick={() => updateStatus(b.id, "Rejected")} title="Reject">
+                              <XCircle size={14} /> Reject
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -1454,6 +1609,48 @@ const SlotRequestsPage = () => {
             <div className="modal-footer">
               <button type="button" className="btn btn-outline" onClick={() => setModalOpen(false)}>Cancel</button>
               <button type="submit" className="btn btn-primary">Create & Send Quotation</button>
+            </div>
+          </form>
+        </Modal>
+
+        <Modal isOpen={editModalOpen} onClose={() => setEditModalOpen(false)} title="Edit Customer Details">
+          <form onSubmit={handleUpdateCustomer}>
+            <div className="modal-body">
+              <p style={{ marginBottom: "1rem", fontSize: "0.875rem", color: "#64748B" }}>
+                Update the customer information for this booking request.
+              </p>
+              <div className="form-group">
+                <label>Customer Name *</label>
+                <input 
+                  className="form-input" 
+                  value={editFormData.customer_name} 
+                  onChange={(e) => setEditFormData({ ...editFormData, customer_name: e.target.value })} 
+                  required 
+                />
+              </div>
+              <div className="form-group">
+                <label>Email Address *</label>
+                <input 
+                  type="email"
+                  className="form-input" 
+                  value={editFormData.customer_email} 
+                  onChange={(e) => setEditFormData({ ...editFormData, customer_email: e.target.value })} 
+                  required 
+                />
+              </div>
+              <div className="form-group">
+                <label>Phone Number *</label>
+                <input 
+                  className="form-input" 
+                  value={editFormData.customer_phone} 
+                  onChange={(e) => setEditFormData({ ...editFormData, customer_phone: e.target.value })} 
+                  required 
+                />
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn btn-outline" onClick={() => setEditModalOpen(false)}>Cancel</button>
+              <button type="submit" className="btn btn-primary">Update Details</button>
             </div>
           </form>
         </Modal>
@@ -1611,6 +1808,8 @@ const BookingsPage = () => {
   const [quotationModalOpen, setQuotationModalOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState(null);
   const [selectedEventForQuotation, setSelectedEventForQuotation] = useState(null);
+  const [negotiationModalOpen, setNegotiationModalOpen] = useState(false);
+  const [negotiationResponse, setNegotiationResponse] = useState({ admin_response: "", final_amount: 0 });
   const quotationRef = useRef();
   
   const handlePrint = useReactToPrint({
@@ -1710,6 +1909,14 @@ const BookingsPage = () => {
   };
 
   const getStatusBadge = (status) => {
+    const classes = { 
+      Approved: "badge-approved", 
+      Pending: "badge-pending", 
+      Sent: "badge-sent", 
+      Rejected: "badge-hot",
+      Negotiating: "badge-partial",
+      Negotiated: "badge-sent"
+    };
     return <span className={`badge ${classes[status] || "badge-pending"}`}>{status}</span>;
   };
 
@@ -1720,6 +1927,18 @@ const BookingsPage = () => {
       fetchData();
     } catch {
       toast.error("Failed to update status");
+    }
+  };
+
+  const submitNegotiationResponse = async (e) => {
+    e.preventDefault();
+    try {
+      await axios.put(`${API}/events/${selectedEventForQuotation.id}/respond-negotiation?admin_response=${negotiationResponse.admin_response}&final_negotiated_amount=${negotiationResponse.final_amount}`);
+      toast.success("Negotiation response sent");
+      setNegotiationModalOpen(false);
+      fetchData();
+    } catch {
+      toast.error("Failed to send response");
     }
   };
 
@@ -1759,14 +1978,27 @@ const BookingsPage = () => {
                     <td>{e.venue_name}</td>
                     <td style={{ fontWeight: 500 }}>₹{e.final_amount?.toLocaleString()}</td>
                     <td>{getStatusBadge(e.quotation_status)}</td>
-                    <td>{e.is_completed ? <span className="badge badge-approved">Yes</span> : <button className="btn btn-sm btn-outline" onClick={() => markComplete(e.id)}>Mark Done</button>}</td>
                     <td>
                       <div className="action-buttons">
+                        {e.quotation_status === "Negotiating" && (
+                          <button 
+                            className="action-btn" 
+                            style={{ background: "#D97706", color: "white" }} 
+                            onClick={() => { 
+                              setSelectedEventForQuotation(e); 
+                              setNegotiationResponse({ admin_response: "", final_amount: e.final_amount }); 
+                              setNegotiationModalOpen(true); 
+                            }}
+                          >
+                            <MessageCircle size={14} /> Respond
+                          </button>
+                        )}
                         <button className="action-btn edit" onClick={() => { setSelectedEventForQuotation(e); setQuotationModalOpen(true); }} title="View Quotation"><Receipt size={14} /></button>
                         <button className="action-btn edit" onClick={() => openModal(e)}><Edit2 size={14} /></button>
                         <button className="action-btn delete" onClick={() => handleDelete(e.id)}><Trash2 size={14} /></button>
                       </div>
                     </td>
+                    <td>{e.is_completed ? <span className="badge badge-approved">Yes</span> : <button className="btn btn-sm btn-outline" onClick={() => markComplete(e.id)}>Mark Done</button>}</td>
                   </tr>
                 ))}
               </tbody>
@@ -1860,6 +2092,18 @@ const BookingsPage = () => {
                 customer={customers.find(c => c.id === selectedEventForQuotation?.customer_id)} 
               />
             </div>
+            {selectedEventForQuotation?.quotation_status === "Negotiating" && (
+              <div style={{ marginTop: "1rem", padding: "1rem", background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: "8px" }}>
+                <h4 style={{ color: "#92400E", marginBottom: "0.5rem" }}>Customer Negotiation Request:</h4>
+                <p style={{ fontStyle: "italic" }}>"{selectedEventForQuotation.negotiation_message}"</p>
+              </div>
+            )}
+            {selectedEventForQuotation?.quotation_status === "Negotiated" && (
+              <div style={{ marginTop: "1rem", padding: "1rem", background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: "8px" }}>
+                <h4 style={{ color: "#166534", marginBottom: "0.5rem" }}>Admin Response:</h4>
+                <p>"{selectedEventForQuotation.admin_negotiation_response}"</p>
+              </div>
+            )}
           </div>
           <div className="modal-footer">
             <button type="button" className="btn btn-outline" onClick={() => setQuotationModalOpen(false)}>Close</button>
@@ -1868,6 +2112,43 @@ const BookingsPage = () => {
               <button type="button" className="btn btn-primary" onClick={() => { sendQuotation(selectedEventForQuotation.id); setQuotationModalOpen(false); }}>Mark as Sent</button>
             )}
           </div>
+        </Modal>
+
+        <Modal isOpen={negotiationModalOpen} onClose={() => setNegotiationModalOpen(false)} title="Respond to Negotiation">
+          <form onSubmit={submitNegotiationResponse}>
+            <div className="modal-body">
+              <div style={{ marginBottom: "1rem", padding: "1rem", background: "#F8FAFC", borderRadius: "8px" }}>
+                <p style={{ fontSize: "0.875rem", color: "#64748B", marginBottom: "0.25rem" }}>Customer's Message:</p>
+                <p style={{ fontWeight: 500 }}>"{selectedEventForQuotation?.negotiation_message}"</p>
+              </div>
+              <div className="form-group">
+                <label>Admin Response / Final Note *</label>
+                <textarea 
+                  className="form-input" 
+                  rows={3} 
+                  value={negotiationResponse.admin_response} 
+                  onChange={(e) => setNegotiationResponse({ ...negotiationResponse, admin_response: e.target.value })}
+                  placeholder="e.g., We can offer you a final discount of ₹3,000."
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label>Final Negotiated Amount (₹) *</label>
+                <input 
+                  type="number" 
+                  className="form-input" 
+                  value={negotiationResponse.final_amount} 
+                  onChange={(e) => setNegotiationResponse({ ...negotiationResponse, final_amount: parseFloat(e.target.value) || 0 })}
+                  required
+                />
+              </div>
+              <p style={{ fontSize: "0.75rem", color: "#64748B", marginTop: "0.5rem" }}>Note: This will be the final iteration. Customer must either Accept or Reject.</p>
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn btn-outline" onClick={() => setNegotiationModalOpen(false)}>Cancel</button>
+              <button type="submit" className="btn btn-primary" style={{ background: "#D97706" }}>Send Final offer</button>
+            </div>
+          </form>
         </Modal>
       </div>
     </AdminLayout>
@@ -1880,6 +2161,7 @@ const ExpensesPage = () => {
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState("all"); // all, suppliers
   const [formData, setFormData] = useState({ 
     expense_date: format(new Date(), "yyyy-MM-dd"), 
     expense_type: "Vegetables", 
@@ -1942,19 +2224,27 @@ const ExpensesPage = () => {
   const totalSpent = expenses.filter(e => e.category === "Spend").reduce((sum, e) => sum + e.amount, 0);
   const totalReceived = expenses.filter(e => e.category === "Received").reduce((sum, e) => sum + e.amount, 0);
   const yetToReceive = expenses.filter(e => e.category === "Yet to Receive" && !e.is_settled).reduce((sum, e) => sum + e.amount, 0);
-  const duePayment = expenses.filter(e => e.category === "Due Payment" && !e.is_settled).reduce((sum, e) => sum + e.amount, 0);
+  const duePayment = expenses.filter(e => (e.category === "Due Payment" || e.category === "Yet to Pay") && !e.is_settled).reduce((sum, e) => sum + e.amount, 0);
 
   const getCategoryBadge = (cat) => {
-    const classes = { Spend: "badge-hot", Received: "badge-paid", "Yet to Receive": "badge-warm", "Due Payment": "badge-hot" };
+    const classes = { Spend: "badge-hot", Received: "badge-paid", "Yet to Receive": "badge-warm", "Due Payment": "badge-hot", "Yet to Pay": "badge-hot" };
     return <span className={`badge ${classes[cat] || "badge-pending"}`}>{cat}</span>;
   };
+
+  const filteredExpenses = activeTab === "all" 
+    ? expenses 
+    : expenses.filter(e => ["Vegetables", "Gas", "Groceries", "Vendor Payment"].includes(e.expense_type));
 
   return (
     <AdminLayout>
       <div data-testid="expenses-page">
         <div className="page-header">
-          <h1>Expense & Reconciliation</h1>
+          <h1>Expense Management</h1>
           <div style={{ display: "flex", gap: "0.75rem" }}>
+            <div className="tab-container" style={{ display: "flex", background: "#F1F5F9", borderRadius: "8px", padding: "4px" }}>
+              <button className={`btn btn-sm ${activeTab === "all" ? "btn-primary" : "btn-ghost"}`} onClick={() => setActiveTab("all")}>All Transactions</button>
+              <button className={`btn btn-sm ${activeTab === "suppliers" ? "btn-primary" : "btn-ghost"}`} onClick={() => setActiveTab("suppliers")}>Supplier Payments</button>
+            </div>
             <button className="btn btn-outline" onClick={handleExport}><Download size={18} /> Export</button>
             <button className="btn btn-primary" onClick={() => setModalOpen(true)}><Plus size={18} /> Add Entry</button>
           </div>
@@ -1964,7 +2254,7 @@ const ExpensesPage = () => {
           <div className="stat-card"><div className="stat-label">Total Spent</div><div className="stat-value" style={{ color: "#DC2626" }}>₹{totalSpent.toLocaleString()}</div></div>
           <div className="stat-card"><div className="stat-label">Total Received</div><div className="stat-value" style={{ color: "#10B981" }}>₹{totalReceived.toLocaleString()}</div></div>
           <div className="stat-card"><div className="stat-label">Yet to Receive</div><div className="stat-value" style={{ color: "#D97706" }}>₹{yetToReceive.toLocaleString()}</div></div>
-          <div className="stat-card"><div className="stat-label">Due to Pay</div><div className="stat-value" style={{ color: "#DC2626" }}>₹{duePayment.toLocaleString()}</div></div>
+          <div className="stat-card"><div className="stat-label">Yet to Pay (Due)</div><div className="stat-value" style={{ color: "#DC2626" }}>₹{duePayment.toLocaleString()}</div></div>
         </div>
 
         <div className="data-card">
@@ -1982,7 +2272,7 @@ const ExpensesPage = () => {
                 </tr>
               </thead>
               <tbody>
-                {expenses.map((e) => (
+                {filteredExpenses.map((e) => (
                   <tr key={e.id}>
                     <td>{e.expense_date}</td>
                     <td>{getCategoryBadge(e.category)}</td>
@@ -1992,9 +2282,9 @@ const ExpensesPage = () => {
                     </td>
                     <td>
                       {e.is_settled ? (
-                        <span style={{ color: "#10B981", fontSize: "0.75rem", fontWeight: 600 }}>SETTLED</span>
-                      ) : (e.category === "Yet to Receive" || e.category === "Due Payment") ? (
-                        <button className="btn btn-ghost btn-sm" style={{ fontSize: "0.65rem", padding: "2px 6px" }} onClick={() => handleSettle(e.id)}>Mark Settled</button>
+                        <span style={{ color: "#10B981", fontSize: "0.75rem", fontWeight: 600 }}>SETTLED / PAID</span>
+                      ) : (e.category === "Yet to Receive" || e.category === "Due Payment" || e.category === "Yet to Pay") ? (
+                        <button className="btn btn-ghost btn-sm" style={{ fontSize: "0.65rem", padding: "2px 6px", color: "#2563EB", border: "1px solid #BFDBFE" }} onClick={() => handleSettle(e.id)}>Mark Settled</button>
                       ) : (
                         <span style={{ color: "#64748B", fontSize: "0.75rem" }}>Completed</span>
                       )}
@@ -2016,8 +2306,8 @@ const ExpensesPage = () => {
                 <select className="form-select" value={formData.category} onChange={(e) => setFormData({ ...formData, category: e.target.value })} required>
                   <option value="Spend">Spend (Direct Expense)</option>
                   <option value="Received">Received (Direct Income)</option>
-                  <option value="Yet to Receive">Yet to Receive (Pending from Customer)</option>
-                  <option value="Due Payment">Due Payment (Payable to Vendor)</option>
+                  <option value="Yet to Receive">Yet to Receive (from Customer)</option>
+                  <option value="Yet to Pay">Yet to Pay (to Vendor/Supplier)</option>
                 </select>
               </div>
               <div className="grid-2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
@@ -2030,7 +2320,7 @@ const ExpensesPage = () => {
               </div>
               <div className="form-group"><label>Amount (₹) *</label><input type="number" className="form-input" value={formData.amount} onChange={(e) => setFormData({ ...formData, amount: parseFloat(e.target.value) || 0 })} required /></div>
               
-              {(formData.category === "Yet to Receive" || formData.category === "Due Payment") && (
+              {(formData.category === "Yet to Receive" || formData.category === "Due Payment" || formData.category === "Yet to Pay") && (
                 <div className="grid-2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
                   <div className="form-group">
                     <label>Due Date</label>
@@ -2199,11 +2489,11 @@ function App() {
           {/* Admin/Staff Routes */}
           <Route path="/admin/dashboard" element={<ProtectedRoute allowedTypes={["admin", "staff"]}><AdminDashboardPage /></ProtectedRoute>} />
           <Route path="/admin/bookings" element={<ProtectedRoute allowedTypes={["admin", "staff"]}><BookingsPage /></ProtectedRoute>} />
+          <Route path="/admin/booking" element={<Navigate to="/admin/bookings" replace />} />
           <Route path="/admin/customers" element={<ProtectedRoute allowedTypes={["admin", "staff"]}><CustomersPage /></ProtectedRoute>} />
           <Route path="/admin/expenses" element={<ProtectedRoute allowedTypes={["admin", "staff"]}><ExpensesPage /></ProtectedRoute>} />
           <Route path="/admin/payments" element={<ProtectedRoute allowedTypes={["admin", "staff"]}><PaymentsPage /></ProtectedRoute>} />
-          <Route path="/admin/leads" element={<ProtectedRoute allowedTypes={["admin", "staff"]}><LeadsPage /></ProtectedRoute>} />
-          <Route path="/admin/slot-requests" element={<ProtectedRoute allowedTypes={["admin", "staff"]}><SlotRequestsPage /></ProtectedRoute>} />
+          <Route path="/admin/customer-requests" element={<ProtectedRoute allowedTypes={["admin", "staff"]}><SlotRequestsPage /></ProtectedRoute>} />
           <Route path="/admin/staff" element={<ProtectedRoute allowedTypes={["admin"]}><StaffManagementPage /></ProtectedRoute>} />
         </Routes>
       </BrowserRouter>
